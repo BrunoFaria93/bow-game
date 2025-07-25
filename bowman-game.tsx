@@ -504,133 +504,443 @@ export default function BowmanGame() {
     const screenY = GROUND_Y - camera.y;
 
     if (
-      screenX < -50 ||
-      screenX > CANVAS_WIDTH + 50 ||
-      screenY < -50 ||
-      screenY > CANVAS_HEIGHT + 50
+      screenX < -80 ||
+      screenX > CANVAS_WIDTH + 80 ||
+      screenY < -80 ||
+      screenY > CANVAS_HEIGHT + 80
     )
       return;
 
-    ctx.strokeStyle = isActive ? "#000" : "#666";
+    // Definir cores dos players (Player 1 = Verde, Player 2 = Roxo)
+    const currentGameState = gameStateRef.current;
+    const playerIndex = currentGameState.players.findIndex(
+      (p) => Math.abs(p.x - worldX) < 10
+    );
+    const isPlayer1 = playerIndex === 0;
+
+    // Cores baseadas no player e estado
+    const skinColor = isActive ? "#fdbcb4" : "#d5dbdb";
+    const tunicColor = isPlayer1 ? "#22c55e" : "#7c3aed"; // Verde vs Roxo
+    const tunicDark = isPlayer1 ? "#16a34a" : "#5b21b6";
+    const leatherColor = "#8b4513";
+    const beardColor = "#654321";
+    const hatColor = isPlayer1 ? "#15803d" : "#4c1d95";
+    const bowColor = "#8B4513";
+    const stringColor = "#654321";
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // === CABEÇA E CHAPÉU ===
+    // Cabeça principal (pele)
+    ctx.fillStyle = skinColor;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY - 40, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Contorno da cabeça
+    ctx.strokeStyle = "#2c3e50";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // === CHAPÉU DE ARQUEIRO ===
+    ctx.fillStyle = hatColor;
+    ctx.beginPath();
+    // Base do chapéu
+    ctx.ellipse(screenX, screenY - 48, 14, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Copa do chapéu (cônica)
+    ctx.beginPath();
+    ctx.moveTo(screenX - 10, screenY - 48);
+    ctx.quadraticCurveTo(screenX, screenY - 58, screenX + 10, screenY - 48);
+    ctx.fill();
+
+    // Contorno do chapéu
+    ctx.strokeStyle = "#2c3e50";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Pluma no chapéu
+    ctx.strokeStyle = isPlayer1 ? "#ef4444" : "#f59e0b";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 8, screenY - 52);
+    ctx.lineTo(screenX + 12, screenY - 60);
+    ctx.moveTo(screenX + 10, screenY - 58);
+    ctx.lineTo(screenX + 14, screenY - 62);
+    ctx.stroke();
+
+    // === BARBA ===
+    ctx.fillStyle = beardColor;
+    ctx.beginPath();
+    ctx.ellipse(screenX, screenY - 30, 8, 6, 0, 0, Math.PI);
+    ctx.fill();
+
+    // Detalhes da barba
+    ctx.strokeStyle = "#4a3728";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const barbX = screenX - 6 + i * 3;
+      ctx.beginPath();
+      ctx.moveTo(barbX, screenY - 32);
+      ctx.lineTo(barbX + Math.sin(i) * 2, screenY - 25);
+      ctx.stroke();
+    }
+
+    // Olhos
+    ctx.fillStyle = "#2c3e50";
+    const eyeOffset = facingRight ? 3 : -3;
+    ctx.beginPath();
+    ctx.arc(screenX + eyeOffset, screenY - 42, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pupila
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(screenX + eyeOffset, screenY - 42, 0.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sobrancelha
+    ctx.strokeStyle = beardColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(screenX + eyeOffset - 3, screenY - 44);
+    ctx.lineTo(screenX + eyeOffset + 3, screenY - 44);
+    ctx.stroke();
+
+    // === TÚNICA DE ARQUEIRO ===
+    // Túnica principal
+    ctx.fillStyle = tunicColor;
+    ctx.beginPath();
+    ctx.roundRect(screenX - 10, screenY - 28, 20, 24, 4);
+    ctx.fill();
+
+    // Contorno da túnica
+    ctx.strokeStyle = tunicDark;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Cinto de couro
+    ctx.fillStyle = leatherColor;
+    ctx.fillRect(screenX - 10, screenY - 12, 20, 4);
+
+    // Fivela do cinto
+    ctx.fillStyle = "#ffd700";
+    ctx.beginPath();
+    ctx.roundRect(screenX - 2, screenY - 11, 4, 2, 1);
+    ctx.fill();
+
+    // Detalhes da túnica (bordados)
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX - 8, screenY - 20);
+    ctx.lineTo(screenX + 8, screenY - 20);
+    ctx.moveTo(screenX - 6, screenY - 16);
+    ctx.lineTo(screenX + 6, screenY - 16);
+    ctx.stroke();
+
+    // Emblema no peito
+    ctx.fillStyle = tunicDark;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY - 18, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Símbolo do arco no emblema
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY - 18, 2, Math.PI * 0.3, Math.PI * 1.7);
+    ctx.stroke();
+
+    // === CALÇAS E BOTAS ===
+    // Calças
+    ctx.fillStyle = "#654321";
+    ctx.strokeStyle = "#4a3728";
     ctx.lineWidth = 3;
 
+    // Perna esquerda
     ctx.beginPath();
-    ctx.arc(screenX, screenY - 40, 8, 0, Math.PI * 2);
+    ctx.moveTo(screenX - 4, screenY - 4);
+    ctx.lineTo(screenX - 8, screenY + 8);
     ctx.stroke();
 
+    // Perna direita
     ctx.beginPath();
-    ctx.moveTo(screenX, screenY - 32);
-    ctx.lineTo(screenX, screenY - 10);
+    ctx.moveTo(screenX + 4, screenY - 4);
+    ctx.lineTo(screenX + 8, screenY + 8);
     ctx.stroke();
 
+    // Botas de couro
+    ctx.fillStyle = leatherColor;
     ctx.beginPath();
-    ctx.moveTo(screenX, screenY - 10);
-    ctx.lineTo(screenX - 8, screenY);
-    ctx.moveTo(screenX, screenY - 10);
-    ctx.lineTo(screenX + 8, screenY);
+    ctx.ellipse(screenX - 8, screenY + 8, 7, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(screenX + 8, screenY + 8, 7, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Detalhes das botas
+    ctx.strokeStyle = "#5d4037";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX - 12, screenY + 6);
+    ctx.lineTo(screenX - 4, screenY + 6);
+    ctx.moveTo(screenX + 4, screenY + 6);
+    ctx.lineTo(screenX + 12, screenY + 6);
     ctx.stroke();
 
+    // === ALJAVA (PORTA-FLECHAS) ===
+    const quiverX = screenX + (facingRight ? -12 : 12);
+    const quiverY = screenY - 15;
+
+    ctx.fillStyle = leatherColor;
+    ctx.beginPath();
+    ctx.roundRect(quiverX - 3, quiverY - 8, 6, 16, 2);
+    ctx.fill();
+
+    // Alça da aljava
+    ctx.strokeStyle = leatherColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(quiverX, quiverY - 10, 8, Math.PI * 0.8, Math.PI * 1.2);
+    ctx.stroke();
+
+    // Flechas na aljava
+    ctx.strokeStyle = "#8B4513";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(quiverX - 1 + i, quiverY - 6);
+      ctx.lineTo(quiverX - 1 + i, quiverY - 12);
+      ctx.stroke();
+    }
+
+    // === ARCO E ANIMAÇÃO MELHORADOS ===
     if (isActive && isCurrentPlayer) {
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 3;
+      const radians = (aimAngle * Math.PI) / 180;
 
       if (isAiming) {
-        const bowArmAngle = (aimAngle * Math.PI) / 180;
-        const bowArmX =
-          screenX + Math.cos(bowArmAngle) * 15 * (facingRight ? 1 : -1);
-        const bowArmY = screenY - 25 + Math.sin(bowArmAngle) * 15;
+        // === MODO MIRANDO - ARCO TENSIONADO ===
 
+        // Braço que segura o arco (protegido com braçadeira)
+        const bowArmX =
+          screenX +
+          Math.cos(radians + Math.PI / 6) * 20 * (facingRight ? 1 : -1);
+        const bowArmY = screenY - 25 + Math.sin(radians + Math.PI / 6) * 20;
+
+        // Braço
+        ctx.strokeStyle = skinColor;
+        ctx.lineWidth = 4;
         ctx.beginPath();
         ctx.moveTo(screenX, screenY - 25);
         ctx.lineTo(bowArmX, bowArmY);
         ctx.stroke();
 
-        const stringArmX = screenX - (facingRight ? 15 : -15);
-        const stringArmY = screenY - 30;
+        // Braçadeira de couro
+        ctx.fillStyle = leatherColor;
+        const armguardX =
+          screenX +
+          Math.cos(radians + Math.PI / 6) * 12 * (facingRight ? 1 : -1);
+        const armguardY = screenY - 25 + Math.sin(radians + Math.PI / 6) * 12;
+        ctx.beginPath();
+        ctx.roundRect(armguardX - 2, armguardY - 4, 4, 8, 1);
+        ctx.fill();
+
+        // Braço que puxa a corda com luva
+        const { power } = calculateAimValues();
+        const pullDistance = 18 + (power / 100) * 12;
+
+        const stringArmX =
+          screenX - (facingRight ? pullDistance : -pullDistance);
+        const stringArmY = screenY - 25 + Math.sin(radians) * 8;
+
+        // Braço
+        ctx.strokeStyle = skinColor;
+        ctx.lineWidth = 4;
         ctx.beginPath();
         ctx.moveTo(screenX, screenY - 25);
         ctx.lineTo(stringArmX, stringArmY);
         ctx.stroke();
 
-        ctx.strokeStyle = "#8B4513";
-        ctx.lineWidth = 4;
+        // Luva de arqueiro
+        ctx.fillStyle = leatherColor;
         ctx.beginPath();
-        ctx.arc(
-          bowArmX,
-          bowArmY,
-          15,
-          bowArmAngle - Math.PI / 3,
-          bowArmAngle + Math.PI / 3
-        );
+        ctx.arc(stringArmX, stringArmY, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // === ARCO DETALHADO ===
+        ctx.strokeStyle = bowColor;
+        ctx.lineWidth = 6;
+
+        // Arco principal (curva tensionada)
+        const bowRadius = 20;
+        const bowStartAngle = radians - Math.PI / 2.2;
+        const bowEndAngle = radians + Math.PI / 2.2;
+
+        ctx.beginPath();
+        ctx.arc(bowArmX, bowArmY, bowRadius, bowStartAngle, bowEndAngle);
         ctx.stroke();
 
-        ctx.strokeStyle = "#333";
+        // Detalhes do arco (madeira entalhada)
+        ctx.strokeStyle = "#654321";
         ctx.lineWidth = 2;
-        const stringStart = {
-          x: bowArmX + Math.cos(bowArmAngle - Math.PI / 3) * 15,
-          y: bowArmY + Math.sin(bowArmAngle - Math.PI / 3) * 15,
-        };
-        const stringEnd = {
-          x: bowArmX + Math.cos(bowArmAngle + Math.PI / 3) * 15,
-          y: bowArmY + Math.sin(bowArmAngle + Math.PI / 3) * 15,
-        };
-
         ctx.beginPath();
-        ctx.moveTo(stringStart.x, stringStart.y);
-        ctx.lineTo(stringArmX, stringArmY);
-        ctx.lineTo(stringEnd.x, stringEnd.y);
+        ctx.arc(bowArmX, bowArmY, bowRadius - 2, bowStartAngle, bowEndAngle);
         ctx.stroke();
 
-        ctx.strokeStyle = "#8B4513";
+        // Empunhadura do arco
+        ctx.fillStyle = leatherColor;
+        ctx.beginPath();
+        ctx.arc(bowArmX, bowArmY, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pontas reforçadas do arco
+        ctx.fillStyle = "#2c3e50";
+        const tipSize = 4;
+
+        const topTipX = bowArmX + Math.cos(bowStartAngle) * bowRadius;
+        const topTipY = bowArmY + Math.sin(bowStartAngle) * bowRadius;
+        ctx.beginPath();
+        ctx.arc(topTipX, topTipY, tipSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        const botTipX = bowArmX + Math.cos(bowEndAngle) * bowRadius;
+        const botTipY = bowArmY + Math.sin(bowEndAngle) * bowRadius;
+        ctx.beginPath();
+        ctx.arc(botTipX, botTipY, tipSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // === CORDA TENSIONADA ===
+        ctx.strokeStyle = stringColor;
         ctx.lineWidth = 3;
-        const arrowLength = 25;
-        const arrowEndX =
-          stringArmX +
-          Math.cos(bowArmAngle) * arrowLength * (facingRight ? 1 : -1);
-        const arrowEndY = stringArmY + Math.sin(bowArmAngle) * arrowLength;
+
+        const midPointX =
+          (topTipX + botTipX) / 2 +
+          (stringArmX - (topTipX + botTipX) / 2) * 0.8;
+        const midPointY =
+          (topTipY + botTipY) / 2 +
+          (stringArmY - (topTipY + botTipY) / 2) * 0.8;
 
         ctx.beginPath();
-        ctx.moveTo(stringArmX, stringArmY);
+        ctx.moveTo(topTipX, topTipY);
+        ctx.quadraticCurveTo(midPointX, midPointY, stringArmX, stringArmY);
+        ctx.quadraticCurveTo(midPointX, midPointY, botTipX, botTipY);
+        ctx.stroke();
+
+        // === FLECHA MEDIEVAL ===
+        const arrowLength = 35;
+        const arrowStartX = stringArmX;
+        const arrowStartY = stringArmY;
+        const arrowEndX =
+          arrowStartX +
+          Math.cos(radians) * arrowLength * (facingRight ? 1 : -1);
+        const arrowEndY = arrowStartY + Math.sin(radians) * arrowLength;
+
+        // Haste da flecha (madeira)
+        ctx.strokeStyle = "#deb887";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(arrowStartX, arrowStartY);
         ctx.lineTo(arrowEndX, arrowEndY);
         ctx.stroke();
 
-        ctx.fillStyle = "#8B4513";
+        // Ponta da flecha (ferro)
+        ctx.fillStyle = "#708090";
+        ctx.strokeStyle = "#2c3e50";
+        ctx.lineWidth = 1;
+
+        ctx.save();
+        ctx.translate(arrowEndX, arrowEndY);
+        ctx.rotate(radians * (facingRight ? 1 : -1));
+
         ctx.beginPath();
-        ctx.arc(arrowEndX, arrowEndY, 2, 0, Math.PI * 2);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-10, -4);
+        ctx.lineTo(-8, 0);
+        ctx.lineTo(-10, 4);
+        ctx.closePath();
         ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.moveTo(screenX, screenY - 25);
-        ctx.lineTo(screenX + (facingRight ? 15 : -15), screenY - 20);
-        ctx.moveTo(screenX, screenY - 25);
-        ctx.lineTo(screenX + (facingRight ? -10 : 10), screenY - 30);
         ctx.stroke();
 
-        ctx.strokeStyle = "#8B4513";
-        ctx.lineWidth = 3;
-        const bowX = screenX + (facingRight ? -15 : 15);
-        const bowY = screenY - 25;
+        ctx.restore();
 
+        // Penas da flecha (coloridas por player)
+        ctx.strokeStyle = isPlayer1 ? "#22c55e" : "#7c3aed";
+        ctx.lineWidth = 3;
+
+        ctx.save();
+        ctx.translate(arrowStartX, arrowStartY);
+        ctx.rotate(radians * (facingRight ? 1 : -1));
+
+        ctx.beginPath();
+        ctx.moveTo(0, -3);
+        ctx.lineTo(-8, -5);
+        ctx.moveTo(0, 3);
+        ctx.lineTo(-8, 5);
+        ctx.stroke();
+
+        ctx.restore();
+      } else {
+        // === MODO RELAXADO ===
+
+        // Braços em posição neutra
+        ctx.strokeStyle = skinColor;
+        ctx.lineWidth = 4;
+
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - 25);
+        ctx.lineTo(screenX + (facingRight ? 15 : -15), screenY - 15);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - 25);
+        ctx.lineTo(screenX + (facingRight ? -12 : 12), screenY - 18);
+        ctx.stroke();
+
+        // Arco em descanso
+        const bowX = screenX + (facingRight ? -15 : 15);
+        const bowY = screenY - 20;
+
+        ctx.strokeStyle = bowColor;
+        ctx.lineWidth = 5;
         ctx.beginPath();
         ctx.arc(
           bowX,
           bowY,
-          12,
-          facingRight ? Math.PI * 0.3 : Math.PI * 0.7,
-          facingRight ? Math.PI * 1.7 : Math.PI * 1.3
+          16,
+          facingRight ? Math.PI * 0.2 : Math.PI * 0.8,
+          facingRight ? Math.PI * 1.8 : Math.PI * 1.2
         );
         ctx.stroke();
+
+        // Empunhadura
+        ctx.fillStyle = leatherColor;
+        ctx.beginPath();
+        ctx.arc(bowX, bowY, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
     } else {
+      // Player inativo - braços básicos
+      ctx.strokeStyle = skinColor;
+      ctx.lineWidth = 3;
+
       ctx.beginPath();
       ctx.moveTo(screenX, screenY - 25);
-      ctx.lineTo(screenX + (facingRight ? 15 : -15), screenY - 20);
+      ctx.lineTo(screenX + (facingRight ? 12 : -12), screenY - 15);
       ctx.moveTo(screenX, screenY - 25);
-      ctx.lineTo(screenX + (facingRight ? -10 : 10), screenY - 30);
+      ctx.lineTo(screenX + (facingRight ? -8 : 8), screenY - 18);
       ctx.stroke();
     }
-  };
 
+    // === SOMBRA REALISTA ===
+    ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+    ctx.beginPath();
+    ctx.ellipse(screenX, screenY + 12, 15, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
   const drawAimingGuide = (ctx: CanvasRenderingContext2D) => {
     const currentGameState = gameStateRef.current;
     if (!currentGameState.isAiming || currentGameState.gamePhase !== "playing")
@@ -646,35 +956,164 @@ export default function BowmanGame() {
     const screenX = player.x - camera.x;
     const screenY = GROUND_Y - camera.y;
 
-    ctx.strokeStyle = "rgba(255, 100, 100, 0.8)";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([]);
+    // Calcular o comprimento baseado na força (40% até 100% do poder)
+    const baseLength = 80; // Comprimento base
+    const powerMultiplier = 0.4 + (power / 100) * 0.6; // 0.4 a 1.0
+    const totalLength = baseLength * powerMultiplier;
+
+    // Número de segmentos baseado na força (3 a 7 segmentos)
+    const segmentCount = Math.floor(3 + (power / 100) * 4);
+    const segmentLength = totalLength / segmentCount;
 
     const startX = screenX;
     const startY = screenY - 25;
 
-    for (let i = 1; i <= 5; i++) {
-      const distance = i * 20;
-      const lineX = startX + Math.cos(radians) * distance * direction;
-      const lineY = startY + Math.sin(radians) * distance * direction;
+    // Desenhar linha principal com gradiente de opacidade
+    for (let i = 0; i < segmentCount; i++) {
+      const segmentStart = i * segmentLength;
+      const segmentEnd = (i + 1) * segmentLength;
 
-      const lineEndX = lineX + Math.cos(radians) * 8 * direction;
-      const lineEndY = lineY + Math.sin(radians) * 8 * direction;
+      const startPosX = startX + Math.cos(radians) * segmentStart * direction;
+      const startPosY = startY + Math.sin(radians) * segmentStart * direction;
+      const endPosX = startX + Math.cos(radians) * segmentEnd * direction;
+      const endPosY = startY + Math.sin(radians) * segmentEnd * direction;
+
+      // Opacidade diminui conforme a distância (mais realista)
+      const opacity = 0.9 - (i / segmentCount) * 0.4;
+
+      // Cor baseada na força
+      let color;
+      if (power < 30) {
+        color = `rgba(34, 197, 94, ${opacity})`; // Verde (força baixa)
+      } else if (power < 70) {
+        color = `rgba(251, 191, 36, ${opacity})`; // Amarelo (força média)
+      } else {
+        color = `rgba(239, 68, 68, ${opacity})`; // Vermelho (força alta)
+      }
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3 + power / 100; // Linha mais grossa com mais força
+      ctx.setLineDash([]);
 
       ctx.beginPath();
-      ctx.moveTo(lineX, lineY);
-      ctx.lineTo(lineEndX, lineEndY);
+      ctx.moveTo(startPosX, startPosY);
+      ctx.lineTo(endPosX, endPosY);
       ctx.stroke();
+
+      // Adicionar seta no final de cada segmento (exceto o último)
+      if (i < segmentCount - 1) {
+        const arrowSize = 4 + (power / 100) * 2; // Seta maior com mais força
+
+        ctx.fillStyle = color;
+        ctx.save();
+        ctx.translate(endPosX, endPosY);
+        ctx.rotate(radians * direction);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-arrowSize, -arrowSize / 2);
+        ctx.lineTo(-arrowSize, arrowSize / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
     }
 
-    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-    ctx.fillRect(screenX - 40, screenY - 90, 80, 50);
+    // Seta final maior
+    const finalArrowSize = 6 + (power / 100) * 3;
+    const finalX = startX + Math.cos(radians) * totalLength * direction;
+    const finalY = startY + Math.sin(radians) * totalLength * direction;
 
-    ctx.fillStyle = "#FFF";
-    ctx.font = "14px Arial";
+    let finalColor;
+    if (power < 30) {
+      finalColor = "rgba(34, 197, 94, 0.9)";
+    } else if (power < 70) {
+      finalColor = "rgba(251, 191, 36, 0.9)";
+    } else {
+      finalColor = "rgba(239, 68, 68, 0.9)";
+    }
+
+    ctx.fillStyle = finalColor;
+    ctx.strokeStyle = finalColor;
+    ctx.lineWidth = 2;
+
+    ctx.save();
+    ctx.translate(finalX, finalY);
+    ctx.rotate(radians * direction);
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-finalArrowSize, -finalArrowSize / 2);
+    ctx.lineTo(-finalArrowSize * 0.7, 0);
+    ctx.lineTo(-finalArrowSize, finalArrowSize / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+
+    // HUD de informações melhorado
+    const hudWidth = 90;
+    const hudHeight = 55;
+    const hudX = screenX - hudWidth / 2;
+    const hudY = screenY - 100;
+
+    // Fundo do HUD com borda
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.beginPath();
+    ctx.roundRect(hudX, hudY, hudWidth, hudHeight, 8);
+    ctx.fill();
+
+    // Borda colorida baseada na força
+    let borderColor;
+    if (power < 30) {
+      borderColor = "rgba(34, 197, 94, 0.8)";
+    } else if (power < 70) {
+      borderColor = "rgba(251, 191, 36, 0.8)";
+    } else {
+      borderColor = "rgba(239, 68, 68, 0.8)";
+    }
+
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Textos do HUD
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "500 12px 'Inter', system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`Ângulo: ${Math.round(angle)}°`, screenX, screenY - 70);
-    ctx.fillText(`Força: ${Math.round(power)}%`, screenX, screenY - 50);
+    ctx.fillText(`${Math.round(angle)}°`, screenX, hudY + 18);
+
+    // Barra de força visual
+    const barWidth = 60;
+    const barHeight = 8;
+    const barX = screenX - barWidth / 2;
+    const barY = hudY + 25;
+
+    // Fundo da barra
+    ctx.fillStyle = "rgba(51, 65, 85, 0.8)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barWidth, barHeight, 4);
+    ctx.fill();
+
+    // Preenchimento da barra
+    ctx.fillStyle = borderColor;
+    ctx.beginPath();
+    ctx.roundRect(
+      barX + 1,
+      barY + 1,
+      (barWidth - 2) * (power / 100),
+      barHeight - 2,
+      3
+    );
+    ctx.fill();
+
+    // Texto da força
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "400 10px 'Inter', system-ui, sans-serif";
+    ctx.fillText(`${Math.round(power)}%`, screenX, hudY + 45);
+
     ctx.textAlign = "left";
   };
 
@@ -1117,7 +1556,7 @@ export default function BowmanGame() {
 
   return (
     <div className="flex flex-col items-center gap-4 p-4 bg-gray-100 min-h-screen">
-      <h1 className="text-3xl font-bold text-gray-800">Bowman Archery Game</h1>
+      <h1 className="text-3xl font-bold text-gray-800">Arquearia</h1>
 
       <canvas
         ref={canvasRef}
@@ -1154,11 +1593,15 @@ export default function BowmanGame() {
         )}
       </div>
 
-      <div className="text-sm text-gray-600 max-w-md text-center">
+      <div className="text-sm text-gray-600 max-w-md text-left">
         <p>
-          <strong>Como jogar:</strong> A câmera segue você e depois a flecha!
-          Calcule bem a trajetória para acertar o oponente que está longe. Agora
-          com maior alcance e precisão!
+          <strong>Como jogar:</strong>
+          <br />
+          • Objetivo: Atingir o oponente com uma flecha, sendo o tiro na cabeça
+          a forma mais eficaz de eliminá-lo.
+          <br />• Controles: Os jogadores ajustam o ângulo e a força dos tiros
+          com um mecanismo simples de arrastar e soltar o mouse, mirando para
+          acertar o oponente.
         </p>
       </div>
     </div>
