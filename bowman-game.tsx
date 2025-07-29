@@ -134,21 +134,39 @@ export default function BowmanGame() {
     if (!currentGameState.isAiming) return { angle: 0, power: 0, direction: 1 };
 
     const player = currentGameState.players[currentGameState.currentPlayer - 1];
-    const camera = currentGameState.camera;
+    const isPlayer1 = currentGameState.currentPlayer === 1;
 
-    const worldMouseX = currentGameState.aimCurrentX + camera.x;
-    const worldMouseY = currentGameState.aimCurrentY + camera.y;
+    // Movimento do mouse desde o clique inicial
+    const horizontalMovement =
+      currentGameState.aimCurrentX - currentGameState.aimStartX;
+    const verticalMovement =
+      currentGameState.aimCurrentY - currentGameState.aimStartY;
 
-    const dx = worldMouseX - player.x;
-    const dy = worldMouseY - (GROUND_Y - 25);
+    // ÂNGULO: baseado no movimento VERTICAL, mas invertido para player 2
+    let angle;
+    if (isPlayer1) {
+      angle = Math.max(-85, Math.min(85, -verticalMovement * 0.5)); // Player 1 normal
+    } else {
+      angle = Math.max(-85, Math.min(85, verticalMovement * 0.5)); // Player 2 invertido
+    }
 
-    let angle = Math.atan2(-dy, Math.abs(dx)) * (180 / Math.PI);
-    angle = Math.max(-85, Math.min(85, angle));
+    // FORÇA: baseada apenas no movimento HORIZONTAL (esquerda/direita)
+    const horizontalDistance = Math.abs(horizontalMovement);
+    let power = Math.min(100, Math.max(5, (horizontalDistance / 100) * 100));
 
-    const horizontalDistance = Math.abs(dx);
-    const power = Math.min(100, Math.max(5, (horizontalDistance / 200) * 100));
+    // INVERSÃO DA FORÇA baseada no jogador e direção do movimento:
+    // Player 1 (verde): força aumenta movendo para ESQUERDA (horizontalMovement negativo)
+    // Player 2 (roxo): força aumenta movendo para DIREITA (horizontalMovement positivo)
+    if (isPlayer1 && horizontalMovement > 0) {
+      power = 100 - power + 10; // Inverte quando move para direita
+    }
 
-    const direction = dx >= 0 ? 1 : -1;
+    if (!isPlayer1 && horizontalMovement < 0) {
+      power = 100 - power + 10; // Inverte quando move para esquerda
+    }
+
+    // DIREÇÃO: sempre fixa baseada no jogador (Player 1 atira para direita, Player 2 para esquerda)
+    const direction = isPlayer1 ? 1 : -1;
 
     return { angle, power, direction };
   };
@@ -588,9 +606,9 @@ export default function BowmanGame() {
       ctx.stroke();
     }
 
-    // Olhos
+    // Olhos - ajustados para direção correta
     ctx.fillStyle = "#2c3e50";
-    const eyeOffset = facingRight ? 3 : -3;
+    const eyeOffset = isPlayer1 ? 3 : -3; // Player 1 olha direita, Player 2 esquerda
     ctx.beginPath();
     ctx.arc(screenX + eyeOffset, screenY - 42, 1.5, 0, Math.PI * 2);
     ctx.fill();
@@ -693,7 +711,7 @@ export default function BowmanGame() {
     ctx.stroke();
 
     // === ALJAVA (PORTA-FLECHAS) ===
-    const quiverX = screenX + (facingRight ? -12 : 12);
+    const quiverX = screenX + (isPlayer1 ? -12 : 12); // Player 1 aljava esquerda, Player 2 direita
     const quiverY = screenY - 15;
 
     ctx.fillStyle = leatherColor;
@@ -718,20 +736,23 @@ export default function BowmanGame() {
       ctx.stroke();
     }
 
-    // === ARCO E ANIMAÇÃO MELHORADOS ===
+    // === ARCO E ANIMAÇÃO CORRIGIDOS ===
     if (isActive && isCurrentPlayer) {
       const radians = (aimAngle * Math.PI) / 180;
 
       if (isAiming) {
         // === MODO MIRANDO - ARCO TENSIONADO ===
 
-        // Braço que segura o arco (protegido com braçadeira)
-        const bowArmX =
-          screenX +
-          Math.cos(radians + Math.PI / 6) * 20 * (facingRight ? 1 : -1);
-        const bowArmY = screenY - 25 + Math.sin(radians + Math.PI / 6) * 20;
+        // Posicionamento baseado no player
+        const bowSide = isPlayer1 ? 1 : -1; // Player 1 segura à direita, Player 2 à esquerda
+        const aimDirection = isPlayer1 ? 1 : -1; // Player 1 mira direita, Player 2 esquerda
 
-        // Braço
+        // Braço que segura o arco
+        const bowArmAngle = radians + (Math.PI / 6) * bowSide;
+        const bowArmX = screenX + Math.cos(bowArmAngle) * 20 * bowSide;
+        const bowArmY = screenY - 25 + Math.sin(bowArmAngle) * 20;
+
+        // Braço que segura o arco
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -741,23 +762,20 @@ export default function BowmanGame() {
 
         // Braçadeira de couro
         ctx.fillStyle = leatherColor;
-        const armguardX =
-          screenX +
-          Math.cos(radians + Math.PI / 6) * 12 * (facingRight ? 1 : -1);
-        const armguardY = screenY - 25 + Math.sin(radians + Math.PI / 6) * 12;
+        const armguardX = screenX + Math.cos(bowArmAngle) * 12 * bowSide;
+        const armguardY = screenY - 25 + Math.sin(bowArmAngle) * 12;
         ctx.beginPath();
         ctx.roundRect(armguardX - 2, armguardY - 4, 4, 8, 1);
         ctx.fill();
 
-        // Braço que puxa a corda com luva
+        // Braço que puxa a corda
         const { power } = calculateAimValues();
         const pullDistance = 18 + (power / 100) * 12;
 
-        const stringArmX =
-          screenX - (facingRight ? pullDistance : -pullDistance);
-        const stringArmY = screenY - 25 + Math.sin(radians) * 8;
+        const stringArmX = screenX - bowSide * pullDistance;
+        const stringArmY = screenY - 25 + Math.sin(radians) * 8 * aimDirection;
 
-        // Braço
+        // Braço da corda
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -775,16 +793,16 @@ export default function BowmanGame() {
         ctx.strokeStyle = bowColor;
         ctx.lineWidth = 6;
 
-        // Arco principal (curva tensionada)
+        // Arco principal (orientado corretamente por player)
         const bowRadius = 20;
-        const bowStartAngle = radians - Math.PI / 2.2;
-        const bowEndAngle = radians + Math.PI / 2.2;
+        const bowStartAngle = radians - (Math.PI / 2.2) * aimDirection;
+        const bowEndAngle = radians + (Math.PI / 2.2) * aimDirection;
 
         ctx.beginPath();
         ctx.arc(bowArmX, bowArmY, bowRadius, bowStartAngle, bowEndAngle);
         ctx.stroke();
 
-        // Detalhes do arco (madeira entalhada)
+        // Detalhes do arco
         ctx.strokeStyle = "#654321";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -797,7 +815,7 @@ export default function BowmanGame() {
         ctx.arc(bowArmX, bowArmY, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Pontas reforçadas do arco
+        // Pontas do arco
         ctx.fillStyle = "#2c3e50";
         const tipSize = 4;
 
@@ -830,16 +848,16 @@ export default function BowmanGame() {
         ctx.quadraticCurveTo(midPointX, midPointY, botTipX, botTipY);
         ctx.stroke();
 
-        // === FLECHA MEDIEVAL ===
+        // === FLECHA ===
         const arrowLength = 35;
         const arrowStartX = stringArmX;
         const arrowStartY = stringArmY;
         const arrowEndX =
-          arrowStartX +
-          Math.cos(radians) * arrowLength * (facingRight ? 1 : -1);
-        const arrowEndY = arrowStartY + Math.sin(radians) * arrowLength;
+          arrowStartX + Math.cos(radians) * arrowLength * aimDirection;
+        const arrowEndY =
+          arrowStartY + Math.sin(radians) * arrowLength * aimDirection;
 
-        // Haste da flecha (madeira)
+        // Haste da flecha
         ctx.strokeStyle = "#deb887";
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -847,14 +865,14 @@ export default function BowmanGame() {
         ctx.lineTo(arrowEndX, arrowEndY);
         ctx.stroke();
 
-        // Ponta da flecha (ferro)
+        // Ponta da flecha
         ctx.fillStyle = "#708090";
         ctx.strokeStyle = "#2c3e50";
         ctx.lineWidth = 1;
 
         ctx.save();
         ctx.translate(arrowEndX, arrowEndY);
-        ctx.rotate(radians * (facingRight ? 1 : -1));
+        ctx.rotate(radians * aimDirection);
 
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -867,13 +885,13 @@ export default function BowmanGame() {
 
         ctx.restore();
 
-        // Penas da flecha (coloridas por player)
+        // Penas da flecha
         ctx.strokeStyle = isPlayer1 ? "#22c55e" : "#7c3aed";
         ctx.lineWidth = 3;
 
         ctx.save();
         ctx.translate(arrowStartX, arrowStartY);
-        ctx.rotate(radians * (facingRight ? 1 : -1));
+        ctx.rotate(radians * aimDirection);
 
         ctx.beginPath();
         ctx.moveTo(0, -3);
@@ -884,36 +902,41 @@ export default function BowmanGame() {
 
         ctx.restore();
       } else {
-        // === MODO RELAXADO ===
+        // === MODO RELAXADO - CORRIGIDO ===
 
-        // Braços em posição neutra
+        // Posição dos braços baseada na direção do player
+        const armDirection = isPlayer1 ? 1 : -1;
+
+        // Braços em posição natural
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 4;
 
+        // Braço direito (ou esquerdo para player 2)
         ctx.beginPath();
         ctx.moveTo(screenX, screenY - 25);
-        ctx.lineTo(screenX + (facingRight ? 15 : -15), screenY - 15);
+        ctx.lineTo(screenX + 15 * armDirection, screenY - 15);
         ctx.stroke();
 
+        // Braço esquerdo (ou direito para player 2)
         ctx.beginPath();
         ctx.moveTo(screenX, screenY - 25);
-        ctx.lineTo(screenX + (facingRight ? -12 : 12), screenY - 18);
+        ctx.lineTo(screenX - 12 * armDirection, screenY - 18);
         ctx.stroke();
 
-        // Arco em descanso
-        const bowX = screenX + (facingRight ? -15 : 15);
+        // Arco em descanso (posicionado corretamente)
+        const bowX = screenX - 15 * armDirection; // Arco do lado correto
         const bowY = screenY - 20;
 
         ctx.strokeStyle = bowColor;
         ctx.lineWidth = 5;
         ctx.beginPath();
-        ctx.arc(
-          bowX,
-          bowY,
-          16,
-          facingRight ? Math.PI * 0.2 : Math.PI * 0.8,
-          facingRight ? Math.PI * 1.8 : Math.PI * 1.2
-        );
+
+        // Arco orientado corretamente para cada player
+        if (isPlayer1) {
+          ctx.arc(bowX, bowY, 16, Math.PI * 0.2, Math.PI * 1.8);
+        } else {
+          ctx.arc(bowX, bowY, 16, Math.PI * 1.2, Math.PI * 0.2);
+        }
         ctx.stroke();
 
         // Empunhadura
@@ -923,19 +946,21 @@ export default function BowmanGame() {
         ctx.fill();
       }
     } else {
-      // Player inativo - braços básicos
+      // === PLAYER INATIVO - BRAÇOS BÁSICOS ===
+      const armDirection = isPlayer1 ? 1 : -1;
+
       ctx.strokeStyle = skinColor;
       ctx.lineWidth = 3;
 
       ctx.beginPath();
       ctx.moveTo(screenX, screenY - 25);
-      ctx.lineTo(screenX + (facingRight ? 12 : -12), screenY - 15);
+      ctx.lineTo(screenX + 12 * armDirection, screenY - 15);
       ctx.moveTo(screenX, screenY - 25);
-      ctx.lineTo(screenX + (facingRight ? -8 : 8), screenY - 18);
+      ctx.lineTo(screenX - 8 * armDirection, screenY - 18);
       ctx.stroke();
     }
 
-    // === SOMBRA REALISTA ===
+    // === SOMBRA ===
     ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
     ctx.beginPath();
     ctx.ellipse(screenX, screenY + 12, 15, 5, 0, 0, Math.PI * 2);
