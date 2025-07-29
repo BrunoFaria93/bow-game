@@ -63,10 +63,10 @@ interface GameState {
   isVsComputer: boolean; // ADICIONE esta linha
 }
 
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 400;
-const WORLD_WIDTH = 1400;
-const GROUND_HEIGHT = 100;
+const CANVAS_WIDTH = 1000; // Era 800
+const CANVAS_HEIGHT = 500; // Era 400
+const WORLD_WIDTH = 1600; // Era 1400
+const GROUND_HEIGHT = 120; // Era 100
 const GROUND_Y = CANVAS_HEIGHT - GROUND_HEIGHT;
 const GRAVITY = 0.3;
 const MAX_POWER = 25;
@@ -111,33 +111,27 @@ export default function BowmanGame() {
     const currentGameState = gameStateRef.current;
     const camera = currentGameState.camera;
 
-    // Primeiro prioridade: seguir flecha ativa
     const activeArrow = currentGameState.arrows.find((a) => a.active);
 
     if (activeArrow) {
-      // ADICIONE ESTES LOGS:
-
-      // Se há flecha ativa, sempre seguir a flecha
-      camera.targetX = activeArrow.x - CANVAS_WIDTH / 2;
+      camera.targetX = activeArrow.x - CANVAS_WIDTH / 2; // Automaticamente ajustado
       camera.targetY = 0;
     } else if (currentGameState.turnInProgress) {
-      console.log("");
+      // Mantém posição atual
     } else {
-      // Apenas quando o turno terminou completamente, focar no jogador atual
       const currentPlayerObj =
         currentGameState.players[currentGameState.currentPlayer - 1];
-      camera.targetX = currentPlayerObj.x - CANVAS_WIDTH / 2;
+      camera.targetX = currentPlayerObj.x - CANVAS_WIDTH / 2; // Automaticamente ajustado
       camera.targetY = 0;
     }
 
     // Limitar os bounds da câmera
     camera.targetX = Math.max(
       0,
-      Math.min(WORLD_WIDTH - CANVAS_WIDTH, camera.targetX)
+      Math.min(WORLD_WIDTH - CANVAS_WIDTH, camera.targetX) // Automaticamente ajustado
     );
     camera.targetY = 0;
 
-    // Usar interpolação mais suave quando seguindo flecha
     const lerpFactor = activeArrow ? 0.1 : 0.05;
     camera.x += (camera.targetX - camera.x) * lerpFactor;
     camera.y += (camera.targetY - camera.y) * lerpFactor;
@@ -180,7 +174,48 @@ export default function BowmanGame() {
 
     return { angle, power, direction };
   };
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Previne scroll/zoom no mobile
+    if (gameStateRef.current.gamePhase !== "playing") return;
+    if (gameStateRef.current.turnInProgress) return;
+    if (isVsComputer && gameStateRef.current.currentPlayer === 2) return;
 
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    gameStateRef.current.isAiming = true;
+    gameStateRef.current.aimStartX = touchX;
+    gameStateRef.current.aimStartY = touchY;
+    gameStateRef.current.aimCurrentX = touchX;
+    gameStateRef.current.aimCurrentY = touchY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Previne scroll no mobile
+    if (!gameStateRef.current.isAiming) return;
+    if (isVsComputer && gameStateRef.current.currentPlayer === 2) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    gameStateRef.current.aimCurrentX = touchX;
+    gameStateRef.current.aimCurrentY = touchY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    handleMouseUp(); // Reutiliza a lógica existente
+  };
   const computerAim = () => {
     const currentGameState = gameStateRef.current;
     const player = currentGameState.players[1]; // Computer (Player 2)
@@ -1658,8 +1693,8 @@ export default function BowmanGame() {
 
   const startGame = (vsComputer: boolean) => {
     const newPlayers = [
-      { x: 100, health: 100, isActive: true },
-      { x: 1200, health: 100, isActive: true },
+      { x: 150, health: 100, isActive: true }, // Era x: 100
+      { x: 1450, health: 100, isActive: true }, // Era x: 1200
     ];
 
     setIsVsComputer(vsComputer);
@@ -1701,27 +1736,45 @@ export default function BowmanGame() {
   };
 
   return (
-    <div className="flex flex-col items-center gap-4 p-4 bg-gray-100 min-h-screen">
-      <h1 className="text-3xl font-bold text-gray-800">Arquearia</h1>
+    <div className="flex flex-col items-center gap-4 p-2 sm:p-4 bg-gray-100 min-h-screen">
+      <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
+        Arquearia
+      </h1>
 
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="border-2 border-gray-400 bg-white cursor-crosshair"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      />
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          className="border-2 border-gray-400 bg-white cursor-crosshair max-w-full h-auto"
+          style={{
+            touchAction: "none",
+            maxWidth: "100vw",
+            maxHeight: "60vh",
+          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        />
+      </div>
 
-      <div className="flex gap-4">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full max-w-md px-2">
         {gameState === "menu" && (
           <>
-            <Button onClick={() => startGame(false)} className="px-6 py-2">
+            <Button
+              onClick={() => startGame(false)}
+              className="px-4 py-3 text-sm sm:text-base"
+            >
               Iniciar Jogo (2 Jogadores)
             </Button>
-            <Button onClick={() => startGame(true)} className="px-6 py-2">
+            <Button
+              onClick={() => startGame(true)}
+              className="px-4 py-3 text-sm sm:text-base"
+            >
               Iniciar Jogo (vs Computador)
             </Button>
           </>
@@ -1731,27 +1784,30 @@ export default function BowmanGame() {
           <Button
             onClick={resetGame}
             variant="outline"
-            className="px-6 py-2 bg-transparent"
+            className="px-4 py-3 text-sm sm:text-base bg-transparent"
           >
             Resetar Jogo
           </Button>
         )}
 
         {gameState === "gameOver" && (
-          <Button onClick={() => startGame(isVsComputer)} className="px-6 py-2">
+          <Button
+            onClick={() => startGame(isVsComputer)}
+            className="px-4 py-3 text-sm sm:text-base"
+          >
             Jogar Novamente
           </Button>
         )}
       </div>
 
-      <div className="text-sm text-gray-600 max-w-md text-left">
+      <div className="text-xs sm:text-sm text-gray-600 max-w-md text-left px-2">
         <p>
           <strong>Como jogar:</strong>
           <br />
           • Objetivo: Atingir o oponente com uma flecha, sendo o tiro na cabeça
           a forma mais eficaz de eliminá-lo.
-          <br />• Controles (Jogador): Ajuste o ângulo e a força dos tiros
-          arrastando e soltando o mouse.
+          <br />• Controles: Arraste e solte para ajustar ângulo e força
+          (mouse/touch).
           <br />• Modo vs Computador: O computador controla o Player 2 e atira
           automaticamente.
         </p>
