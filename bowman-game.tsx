@@ -61,15 +61,16 @@ interface GameState {
   camera: Camera;
   computerThinking: boolean;
   isVsComputer: boolean; // ADICIONE esta linha
+  worldWidth: number;
 }
 
-const CANVAS_WIDTH = 1000; // Era 800
-const CANVAS_HEIGHT = 500; // Era 400
-const WORLD_WIDTH = 1600; // Era 1400
-const GROUND_HEIGHT = 120; // Era 100
+const CANVAS_WIDTH = window.innerWidth || 1400; // Largura total da tela
+const CANVAS_HEIGHT = 600; // Altura maior
+const WORLD_WIDTH = 1600; // Mundo base (será dinamizado)
+const GROUND_HEIGHT = 120;
 const GROUND_Y = CANVAS_HEIGHT - GROUND_HEIGHT;
 const GRAVITY = 0.3;
-const MAX_POWER = 25;
+const MAX_POWER = 35; // Aumentei de 25 para 35 para mais alcance
 
 export default function BowmanGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -92,9 +93,12 @@ export default function BowmanGame() {
     turnInProgress: false,
     camera: { x: 0, y: 0, targetX: 0, targetY: 0 },
     computerThinking: false,
-    isVsComputer: false, // ADICIONE esta linha que estava faltando
+    isVsComputer: false,
+    worldWidth: WORLD_WIDTH, // ADICIONE esta linha
   });
+  const [canvasWidth, setCanvasWidth] = useState(window.innerWidth || 1400);
 
+  const [currentWorldWidth, setCurrentWorldWidth] = useState(WORLD_WIDTH);
   const animationRef = useRef<number | null>(null);
   const [gameState, setGameState] = useState<"menu" | "playing" | "gameOver">(
     "menu"
@@ -107,32 +111,61 @@ export default function BowmanGame() {
   ]);
   const [isVsComputer, setIsVsComputer] = useState(false);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setCanvasWidth(window.innerWidth);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const updateCamera = () => {
     const currentGameState = gameStateRef.current;
     const camera = currentGameState.camera;
+    const currentCanvasWidth = canvasWidth;
 
     const activeArrow = currentGameState.arrows.find((a) => a.active);
 
     if (activeArrow) {
-      camera.targetX = activeArrow.x - CANVAS_WIDTH / 2; // Automaticamente ajustado
-      camera.targetY = 0;
+      // Câmera segue a flecha horizontalmente sempre
+      camera.targetX = activeArrow.x - currentCanvasWidth / 2;
+
+      // Para o eixo Y: só segue se a flecha estiver muito acima ou muito abaixo da tela
+      const arrowScreenY = activeArrow.y;
+      const groundLevel = GROUND_Y;
+
+      // Se a flecha estiver muito acima do chão (mais de 200px), segue no Y
+      if (activeArrow.y < groundLevel - 200) {
+        camera.targetY = activeArrow.y - CANVAS_HEIGHT / 2;
+        // Mas nunca vai abaixo do nível do chão
+        camera.targetY = Math.min(camera.targetY, -50);
+      } else {
+        // Se estiver próxima do chão, mantém câmera no nível do chão
+        camera.targetY = 0;
+      }
     } else if (currentGameState.turnInProgress) {
       // Mantém posição atual
     } else {
       const currentPlayerObj =
         currentGameState.players[currentGameState.currentPlayer - 1];
-      camera.targetX = currentPlayerObj.x - CANVAS_WIDTH / 2; // Automaticamente ajustado
-      camera.targetY = 0;
+      camera.targetX = currentPlayerObj.x - currentCanvasWidth / 2;
+      camera.targetY = 0; // Sempre volta para o nível do chão quando não há flecha
     }
 
-    // Limitar os bounds da câmera
-    camera.targetX = Math.max(
-      0,
-      Math.min(WORLD_WIDTH - CANVAS_WIDTH, camera.targetX) // Automaticamente ajustado
-    );
-    camera.targetY = 0;
+    // Limites horizontais apenas quando não há flecha ativa
+    if (!activeArrow) {
+      const worldWidth = currentGameState.worldWidth || WORLD_WIDTH;
+      camera.targetX = Math.max(
+        0,
+        Math.min(worldWidth - currentCanvasWidth, camera.targetX)
+      );
+    }
 
-    const lerpFactor = activeArrow ? 0.1 : 0.05;
+    // Limites verticais: nunca permitir que vá abaixo do chão
+    camera.targetY = Math.max(-300, Math.min(50, camera.targetY));
+
+    const lerpFactor = activeArrow ? 0.08 : 0.05;
     camera.x += (camera.targetX - camera.x) * lerpFactor;
     camera.y += (camera.targetY - camera.y) * lerpFactor;
   };
@@ -174,6 +207,7 @@ export default function BowmanGame() {
 
     return { angle, power, direction };
   };
+
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault(); // Previne scroll/zoom no mobile
     if (gameStateRef.current.gamePhase !== "playing") return;
@@ -227,13 +261,17 @@ export default function BowmanGame() {
     // CORREÇÃO: Usar ângulos NEGATIVOS para mirar para cima
     let idealAngle = -45; // Negativo para cima!
 
-    // Ajustar ângulo baseado na distância
-    if (distance > 800) {
+    // Ajustar ângulo baseado na distância (agora com ranges mais dinâmicos)
+    if (distance > 1000) {
+      idealAngle = -25 - Math.random() * 10; // -25 a -35 graus para distâncias muito longas
+    } else if (distance > 800) {
       idealAngle = -35 - Math.random() * 10; // -35 a -45 graus para longas distâncias
-    } else if (distance > 400) {
+    } else if (distance > 500) {
       idealAngle = -40 - Math.random() * 15; // -40 a -55 graus para médias distâncias
+    } else if (distance > 300) {
+      idealAngle = -50 - Math.random() * 15; // -50 a -65 graus para curtas distâncias
     } else {
-      idealAngle = -50 - Math.random() * 20; // -50 a -70 graus para curtas distâncias
+      idealAngle = -55 - Math.random() * 20; // -55 a -75 graus para distâncias muito curtas
     }
 
     // Determinar se vai acertar (38% de chance)
@@ -244,7 +282,15 @@ export default function BowmanGame() {
     if (willHit) {
       // Tiro para acertar (com pequena variação para parecer natural)
       finalAngle = idealAngle + (Math.random() - 0.5) * 8; // ±4 graus de variação
-      finalPower = 65 + Math.random() * 25; // 65-90% de potência
+
+      // Ajustar potência baseada na distância
+      if (distance > 900) {
+        finalPower = 80 + Math.random() * 20; // 80-100% para longas distâncias
+      } else if (distance > 600) {
+        finalPower = 65 + Math.random() * 25; // 65-90% para médias distâncias
+      } else {
+        finalPower = 50 + Math.random() * 30; // 50-80% para curtas distâncias
+      }
     } else {
       // Tiro para errar, mas passar perto (62% das vezes)
       const missType = Math.random();
@@ -252,7 +298,13 @@ export default function BowmanGame() {
       if (missType < 0.4) {
         // Errar por pouco (40% dos erros)
         finalAngle = idealAngle + (Math.random() - 0.5) * 20; // ±10 graus
-        finalPower = 60 + Math.random() * 30; // 60-90%
+
+        // Potência baseada na distância para erros
+        if (distance > 800) {
+          finalPower = 70 + Math.random() * 25; // 70-95%
+        } else {
+          finalPower = 60 + Math.random() * 30; // 60-90%
+        }
 
         const errorDirection = Math.random() < 0.5 ? -1 : 1;
         finalAngle += errorDirection * (3 + Math.random() * 7); // 3-10 graus de erro
@@ -268,13 +320,17 @@ export default function BowmanGame() {
       } else {
         // Errar por ângulo (30% dos erros)
         if (Math.random() < 0.5) {
-          // CORREÇÃO: Para ângulo "muito alto", usar mais negativo (mais para cima)
           finalAngle = idealAngle - 15 - Math.random() * 20; // Mais negativo = mais alto
         } else {
-          // Para ângulo "muito baixo", usar menos negativo (mais para baixo)
           finalAngle = Math.min(-10, idealAngle + 15 + Math.random() * 15); // Menos negativo = mais baixo
         }
-        finalPower = 60 + Math.random() * 30; // 60-90%
+
+        // Potência baseada na distância
+        if (distance > 800) {
+          finalPower = 70 + Math.random() * 25;
+        } else {
+          finalPower = 60 + Math.random() * 30;
+        }
       }
     }
 
@@ -358,7 +414,7 @@ export default function BowmanGame() {
     const currentGameState = gameStateRef.current;
     const camera = currentGameState.camera;
 
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.clearRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
     // Gradiente do céu
     const skyGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT * 0.7);
@@ -367,16 +423,16 @@ export default function BowmanGame() {
     skyGradient.addColorStop(0.6, "#60a5fa");
     skyGradient.addColorStop(1, "#bfdbfe");
     ctx.fillStyle = skyGradient;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
-    // Nuvens
+    // Nuvens infinitas - sem limites
     ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
     const cloudOffset1 = camera.x * 0.1;
-    for (let i = 0; i < 8; i++) {
-      const cloudX = ((i * 180 - cloudOffset1) % (CANVAS_WIDTH + 200)) - 100;
+    for (let i = -10; i < 50; i++) {
+      const cloudX = ((i * 180 - cloudOffset1) % (canvasWidth + 400)) - 200;
       const cloudY = 40 + Math.sin(i * 0.7) * 20;
 
-      if (cloudX > -100 && cloudX < CANVAS_WIDTH + 100) {
+      if (cloudX > -200 && cloudX < canvasWidth + 200) {
         ctx.beginPath();
         ctx.arc(cloudX, cloudY, 25, 0, Math.PI * 2);
         ctx.arc(cloudX + 20, cloudY, 35, 0, Math.PI * 2);
@@ -387,11 +443,11 @@ export default function BowmanGame() {
 
     ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
     const cloudOffset2 = camera.x * 0.2;
-    for (let i = 0; i < 6; i++) {
-      const cloudX = ((i * 220 - cloudOffset2) % (CANVAS_WIDTH + 240)) - 120;
+    for (let i = -8; i < 40; i++) {
+      const cloudX = ((i * 220 - cloudOffset2) % (canvasWidth + 440)) - 220;
       const cloudY = 80 + Math.cos(i * 1.2) * 15;
 
-      if (cloudX > -120 && cloudX < CANVAS_WIDTH + 120) {
+      if (cloudX > -220 && cloudX < canvasWidth + 220) {
         ctx.beginPath();
         ctx.arc(cloudX, cloudY, 18, 0, Math.PI * 2);
         ctx.arc(cloudX + 15, cloudY, 25, 0, Math.PI * 2);
@@ -400,22 +456,22 @@ export default function BowmanGame() {
       }
     }
 
-    // Montanhas
+    // Montanhas infinitas
     ctx.fillStyle = "rgba(51, 65, 85, 0.6)";
     const mountainOffset = camera.x * 0.3;
 
     ctx.beginPath();
-    ctx.moveTo(0, CANVAS_HEIGHT * 0.7);
+    ctx.moveTo(-400, CANVAS_HEIGHT * 0.7);
 
     const mountainPoints = [];
-    for (let i = 0; i <= 15; i++) {
+    for (let i = -8; i <= 30; i++) {
       const x = i * 100 - mountainOffset;
       const height = 60 + Math.sin(i * 0.5) * 30 + Math.cos(i * 0.8) * 20;
       mountainPoints.push({ x, y: CANVAS_HEIGHT * 0.7 - height });
     }
 
     mountainPoints.forEach((point, index) => {
-      if (point.x >= -200 && point.x <= CANVAS_WIDTH + 200) {
+      if (point.x >= -500 && point.x <= canvasWidth + 500) {
         if (index === 0) {
           ctx.moveTo(point.x, point.y);
         } else {
@@ -424,40 +480,47 @@ export default function BowmanGame() {
       }
     });
 
-    ctx.lineTo(CANVAS_WIDTH + 200, CANVAS_HEIGHT * 0.7);
-    ctx.lineTo(CANVAS_WIDTH + 200, CANVAS_HEIGHT);
-    ctx.lineTo(0, CANVAS_HEIGHT);
+    ctx.lineTo(canvasWidth + 500, CANVAS_HEIGHT * 0.7);
+    ctx.lineTo(canvasWidth + 500, CANVAS_HEIGHT);
+    ctx.lineTo(-500, CANVAS_HEIGHT);
     ctx.closePath();
     ctx.fill();
 
-    // Chão
-    const groundScreenY = CANVAS_HEIGHT - GROUND_HEIGHT;
+    // Chão infinito
+    const groundScreenY = Math.max(
+      CANVAS_HEIGHT - GROUND_HEIGHT - camera.y,
+      CANVAS_HEIGHT - GROUND_HEIGHT
+    );
 
     const groundGradient = ctx.createLinearGradient(
       0,
       groundScreenY,
       0,
-      CANVAS_HEIGHT
+      groundScreenY + GROUND_HEIGHT
     );
     groundGradient.addColorStop(0, "#16a34a");
     groundGradient.addColorStop(0.3, "#15803d");
     groundGradient.addColorStop(0.7, "#166534");
     groundGradient.addColorStop(1, "#14532d");
     ctx.fillStyle = groundGradient;
-    ctx.fillRect(0, groundScreenY, CANVAS_WIDTH, GROUND_HEIGHT);
+    ctx.fillRect(-500, groundScreenY, canvasWidth + 1000, GROUND_HEIGHT);
 
-    // Textura do chão
+    // Textura do chão infinita
     ctx.fillStyle = "rgba(20, 83, 45, 0.3)";
     for (
-      let x = Math.floor(camera.x / 8) * 8;
-      x < camera.x + CANVAS_WIDTH + 8;
+      let x = Math.floor((camera.x - 200) / 8) * 8;
+      x < camera.x + canvasWidth + 200;
       x += 8
     ) {
-      for (let y = groundScreenY + 20; y < CANVAS_HEIGHT; y += 8) {
+      for (
+        let y = groundScreenY + 20;
+        y < groundScreenY + GROUND_HEIGHT;
+        y += 8
+      ) {
         const seed = Math.sin(x * 0.01) * Math.cos(y * 0.01);
         if (seed > 0.4) {
           const screenX = x - camera.x;
-          if (screenX >= 0 && screenX <= CANVAS_WIDTH) {
+          if (screenX >= -50 && screenX <= canvasWidth + 50) {
             ctx.fillRect(screenX + seed * 4, y + seed * 4, 2, 2);
           }
         }
@@ -467,34 +530,37 @@ export default function BowmanGame() {
     // Manchas de sangue
     drawBloodStains(ctx);
 
-    // Grama
-    for (
-      let i = Math.floor(camera.x / 10) * 10;
-      i < camera.x + CANVAS_WIDTH + 10;
-      i += 10
-    ) {
-      const grassScreenX = i - camera.x;
-      if (grassScreenX >= -20 && grassScreenX <= CANVAS_WIDTH + 20) {
-        ctx.fillStyle = "#22c55e";
-        for (let j = 0; j < 4; j++) {
-          const bladeX = grassScreenX + j * 2.5 + Math.sin(i * 0.01 + j) * 1.5;
-          const bladeHeight = 8 + Math.sin(i * 0.02 + j) * 2;
-          ctx.fillRect(bladeX, groundScreenY - bladeHeight, 1, bladeHeight);
-        }
+    // Grama infinita - APENAS SE O CHÃO ESTIVER VISÍVEL
+    if (groundScreenY <= CANVAS_HEIGHT - 50) {
+      for (
+        let i = Math.floor((camera.x - 200) / 10) * 10;
+        i < camera.x + canvasWidth + 200;
+        i += 10
+      ) {
+        const grassScreenX = i - camera.x;
+        if (grassScreenX >= -50 && grassScreenX <= canvasWidth + 50) {
+          ctx.fillStyle = "#22c55e";
+          for (let j = 0; j < 4; j++) {
+            const bladeX =
+              grassScreenX + j * 2.5 + Math.sin(i * 0.01 + j) * 1.5;
+            const bladeHeight = 8 + Math.sin(i * 0.02 + j) * 2;
+            ctx.fillRect(bladeX, groundScreenY - bladeHeight, 1, bladeHeight);
+          }
 
-        ctx.fillStyle = "#16a34a";
-        for (let j = 0; j < 3; j++) {
-          const bladeX = grassScreenX + j * 3 + Math.cos(i * 0.015 + j) * 1;
-          const bladeHeight = 6 + Math.cos(i * 0.025 + j) * 1.5;
-          ctx.fillRect(bladeX, groundScreenY - bladeHeight, 1.5, bladeHeight);
-        }
+          ctx.fillStyle = "#16a34a";
+          for (let j = 0; j < 3; j++) {
+            const bladeX = grassScreenX + j * 3 + Math.cos(i * 0.015 + j) * 1;
+            const bladeHeight = 6 + Math.cos(i * 0.025 + j) * 1.5;
+            ctx.fillRect(bladeX, groundScreenY - bladeHeight, 1.5, bladeHeight);
+          }
 
-        const flowerSeed = Math.sin(i * 0.1);
-        if (flowerSeed > 0.8) {
-          ctx.fillStyle = flowerSeed > 0.9 ? "#fbbf24" : "#f472b6";
-          ctx.beginPath();
-          ctx.arc(grassScreenX + 5, groundScreenY - 3, 1.5, 0, Math.PI * 2);
-          ctx.fill();
+          const flowerSeed = Math.sin(i * 0.1);
+          if (flowerSeed > 0.8) {
+            ctx.fillStyle = flowerSeed > 0.9 ? "#fbbf24" : "#f472b6";
+            ctx.beginPath();
+            ctx.arc(grassScreenX + 5, groundScreenY - 3, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
     }
@@ -505,14 +571,14 @@ export default function BowmanGame() {
       if (bloodIntensity > 0.1) {
         const playerScreenX = player.x - camera.x;
 
-        if (playerScreenX >= -100 && playerScreenX <= CANVAS_WIDTH + 100) {
+        if (playerScreenX >= -100 && playerScreenX <= canvasWidth + 100) {
           for (let i = 0; i < Math.floor(10 * bloodIntensity); i++) {
             const angle = (Math.PI * 2 * i) / Math.floor(10 * bloodIntensity);
             const distance = 15 + Math.sin(i * 0.5) * 20 * bloodIntensity;
             const x = playerScreenX + Math.cos(angle) * distance;
             const y = groundScreenY + 5 + Math.sin(i * 0.3) * 8;
 
-            if (x >= 0 && x <= CANVAS_WIDTH) {
+            if (x >= -20 && x <= canvasWidth + 20) {
               ctx.fillStyle = `rgba(139, 15, 15, ${0.15 * bloodIntensity})`;
               ctx.beginPath();
               ctx.arc(
@@ -529,33 +595,31 @@ export default function BowmanGame() {
       }
     });
 
-    // Desenhar jogadores
+    // Desenhar jogadores (só se estiverem na área visível ou próxima)
     currentGameState.players.forEach((player, index) => {
       if (player.isActive) {
-        const { angle } = calculateAimValues();
-        drawStickFigure(
-          ctx,
-          player.x,
-          index === 0,
-          true,
-          currentGameState.currentPlayer === index + 1,
-          angle,
-          currentGameState.isAiming &&
-            currentGameState.currentPlayer === index + 1
-        );
+        const playerScreenX = player.x - camera.x;
+        if (playerScreenX >= -150 && playerScreenX <= canvasWidth + 150) {
+          const { angle } = calculateAimValues();
+          drawStickFigure(
+            ctx,
+            player.x,
+            index === 0,
+            true,
+            currentGameState.currentPlayer === index + 1,
+            angle,
+            currentGameState.isAiming &&
+              currentGameState.currentPlayer === index + 1
+          );
+        }
       }
     });
 
     // Desenhar guia de mira
     drawAimingGuide(ctx);
 
-    // LOGS DE DEBUG PARA S FLECHAS
-    currentGameState.arrows.forEach((arrow, index) => {});
-
-    // Desenhar flechas
+    // Desenhar flechas (sempre, mesmo que longe)
     currentGameState.arrows.forEach((arrow, index) => {
-      if (arrow.active && arrow.shooterId === 2) {
-      }
       drawArrow(ctx, arrow);
     });
 
@@ -568,7 +632,7 @@ export default function BowmanGame() {
     // Tela de fim de jogo
     if (currentGameState.gamePhase === "gameOver" && currentGameState.winner) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
       ctx.fillStyle = "#FFF";
       ctx.font = "36px Arial";
@@ -577,13 +641,13 @@ export default function BowmanGame() {
         isVsComputer && currentGameState.winner === 2
           ? "Computador Venceu!"
           : `Player ${currentGameState.winner} Venceu!`,
-        CANVAS_WIDTH / 2,
+        canvasWidth / 2,
         CANVAS_HEIGHT / 2
       );
       ctx.font = "18px Arial";
       ctx.fillText(
         "Clique em 'Jogar Novamente' para uma nova partida",
-        CANVAS_WIDTH / 2,
+        canvasWidth / 2,
         CANVAS_HEIGHT / 2 + 40
       );
       ctx.textAlign = "left";
@@ -1267,20 +1331,22 @@ export default function BowmanGame() {
 
   const drawUI = (ctx: CanvasRenderingContext2D) => {
     const currentGameState = gameStateRef.current;
+    const camera = currentGameState.camera;
 
+    // UI sempre fixa no topo
     const gradient = ctx.createLinearGradient(0, 0, 0, 80);
     gradient.addColorStop(0, "rgba(15, 23, 42, 0.95)");
     gradient.addColorStop(1, "rgba(15, 23, 42, 0.85)");
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
+    ctx.fillRect(0, 0, canvasWidth, 80);
 
     ctx.fillStyle = "rgba(59, 130, 246, 0.8)";
-    ctx.fillRect(0, 78, CANVAS_WIDTH, 2);
+    ctx.fillRect(0, 78, canvasWidth, 2);
 
     currentGameState.players.forEach((player, index) => {
       const isLeft = index === 0;
-      const cardX = isLeft ? 20 : CANVAS_WIDTH - 200;
-      const cardY = 15;
+      const cardX = isLeft ? 20 : canvasWidth - 200;
+      const cardY = 15; // Posição fixa
       const cardWidth = 180;
       const cardHeight = 50;
 
@@ -1361,12 +1427,13 @@ export default function BowmanGame() {
     });
 
     if (currentGameState.gamePhase === "playing") {
-      const centerX = CANVAS_WIDTH / 2;
+      const centerX = canvasWidth / 2;
+      const centerY = 20; // Posição fixa
       const hasActiveArrow = currentGameState.arrows.some((a) => a.active);
 
       ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
       ctx.beginPath();
-      ctx.roundRect(centerX - 80, 20, 160, 35, 8);
+      ctx.roundRect(centerX - 80, centerY, 160, 35, 8);
       ctx.fill();
 
       ctx.strokeStyle = "rgba(71, 85, 105, 0.5)";
@@ -1378,21 +1445,21 @@ export default function BowmanGame() {
       if (hasActiveArrow) {
         ctx.fillStyle = "#f59e0b";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
-        ctx.fillText("● SEGUINDO", centerX, 35);
+        ctx.fillText("● SEGUINDO", centerX, centerY + 15);
         ctx.fillStyle = "#fbbf24";
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
-        ctx.fillText("Flecha em vôo", centerX, 47);
+        ctx.fillText("Flecha em vôo", centerX, centerY + 27);
       } else if (currentGameState.turnInProgress) {
         ctx.fillStyle = "#ef4444";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
-        ctx.fillText("● ESPERANDO", centerX, 35);
+        ctx.fillText("● ESPERANDO", centerX, centerY + 15);
         ctx.fillStyle = "#fca5a5";
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
-        ctx.fillText("Pousando...", centerX, 47);
+        ctx.fillText("Pousando...", centerX, centerY + 27);
       } else if (currentGameState.isAiming) {
         ctx.fillStyle = "#3b82f6";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
-        ctx.fillText("● MIRANDO", centerX, 35);
+        ctx.fillText("● MIRANDO", centerX, centerY + 15);
         ctx.fillStyle = "#93c5fd";
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
         ctx.fillText(
@@ -1400,7 +1467,7 @@ export default function BowmanGame() {
             ? "Computador mirando..."
             : "Solte para atirar!",
           centerX,
-          47
+          centerY + 27
         );
       } else {
         ctx.fillStyle = "#10b981";
@@ -1410,7 +1477,7 @@ export default function BowmanGame() {
             ? "● COMPUTADOR"
             : `● PLAYER ${currentGameState.currentPlayer}`,
           centerX,
-          35
+          centerY + 15
         );
         ctx.fillStyle = "#6ee7b7";
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
@@ -1419,7 +1486,7 @@ export default function BowmanGame() {
             ? "Computador atirando..."
             : "Sua vez",
           centerX,
-          47
+          centerY + 27
         );
       }
 
@@ -1430,15 +1497,15 @@ export default function BowmanGame() {
   const checkCollision = (arrow: Arrow): boolean => {
     const currentGameState = gameStateRef.current;
 
-    // CORREÇÃO: Mudei de GROUND_Y - 5 para GROUND_Y + 10 para dar mais tolerância
+    // APENAS checa colisão com o chão - SEM limites de bordas
     if (arrow.y >= GROUND_Y + 10) {
       return true;
     }
 
-    if (arrow.x < -50 || arrow.x > WORLD_WIDTH + 50) {
-      return true;
-    }
+    // SEM verificação de bordas - flecha pode voar infinitamente!
+    // Removido: if (arrow.x < -50 || arrow.x > worldWidth + 50)
 
+    // Apenas colisão com jogadores
     for (let i = 0; i < currentGameState.players.length; i++) {
       const player = currentGameState.players[i];
       if (!player.isActive) continue;
@@ -1690,11 +1757,38 @@ export default function BowmanGame() {
     gameStateRef.current.arrows.push(newArrow);
     gameStateRef.current.isAiming = false;
   };
+  const generateRandomPositions = () => {
+    const minWorldWidth = 2000; // Mundo mínimo maior
+    const maxWorldWidth = 4000; // Mundo máximo bem maior
+    const playerMargin = 150; // Margem maior
+
+    // Gera um tamanho de mundo aleatório
+    const randomWorldWidth =
+      minWorldWidth + Math.random() * (maxWorldWidth - minWorldWidth);
+
+    // Player 1 sempre no canto esquerdo
+    const player1X = playerMargin;
+
+    // Player 2 sempre no canto direito
+    const player2X = randomWorldWidth - playerMargin;
+
+    return {
+      player1X,
+      player2X,
+      worldWidth: randomWorldWidth,
+    };
+  };
 
   const startGame = (vsComputer: boolean) => {
+    // Gera posições e tamanho do mundo aleatórios
+    const { player1X, player2X, worldWidth } = generateRandomPositions();
+
+    // Atualiza o tamanho do mundo atual
+    setCurrentWorldWidth(worldWidth);
+
     const newPlayers = [
-      { x: 150, health: 100, isActive: true }, // Era x: 100
-      { x: 1450, health: 100, isActive: true }, // Era x: 1200
+      { x: player1X, health: 100, isActive: true }, // Player 1 (verde) - sempre canto esquerdo
+      { x: player2X, health: 100, isActive: true }, // Player 2 (roxo) - sempre canto direito
     ];
 
     setIsVsComputer(vsComputer);
@@ -1704,7 +1798,7 @@ export default function BowmanGame() {
       arrows: [],
       bloodParticles: [],
       bloodStains: [],
-      currentPlayer: 1, // SEMPRE começa com player 1
+      currentPlayer: 1,
       gamePhase: "playing",
       winner: null,
       isAiming: false,
@@ -1716,11 +1810,12 @@ export default function BowmanGame() {
       computerThinking: false,
       camera: { x: 0, y: 0, targetX: 0, targetY: 0 },
       isVsComputer: vsComputer,
+      worldWidth: worldWidth, // Adiciona o tamanho do mundo ao estado
     };
 
     setGameState("playing");
     setPlayers(newPlayers);
-    setCurrentPlayer(1); // Player 1 sempre começa
+    setCurrentPlayer(1);
     setWinner(null);
   };
 
@@ -1744,13 +1839,14 @@ export default function BowmanGame() {
       <div className="relative">
         <canvas
           ref={canvasRef}
-          width={CANVAS_WIDTH}
+          width={canvasWidth}
           height={CANVAS_HEIGHT}
-          className="border-2 border-gray-400 bg-white cursor-crosshair max-w-full h-auto"
+          className="border-2 border-gray-400 bg-white cursor-crosshair"
           style={{
             touchAction: "none",
-            maxWidth: "100vw",
-            maxHeight: "60vh",
+            width: "100vw",
+            height: "auto",
+            maxHeight: "70vh",
           }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
