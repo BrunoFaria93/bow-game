@@ -159,7 +159,10 @@ export default function BowmanGame() {
     if (isPlayer1) {
       angle = Math.max(-85, Math.min(85, -verticalMovement * 0.5));
     } else {
-      angle = Math.max(-85, Math.min(85, verticalMovement * 0.5));
+      // Correção: Inverter verticalMovement apenas no modo vs Computador
+      angle = currentGameState.isVsComputer
+        ? Math.max(-85, Math.min(85, -verticalMovement * 0.5))
+        : Math.max(-85, Math.min(85, verticalMovement * -0.5));
     }
 
     const horizontalDistance = Math.abs(horizontalMovement);
@@ -992,6 +995,7 @@ export default function BowmanGame() {
       return;
 
     const player = currentGameState.players[currentGameState.currentPlayer - 1];
+    const isPlayer1 = currentGameState.currentPlayer === 1;
     const camera = currentGameState.camera;
     const { angle, power, direction } = calculateAimValues();
 
@@ -1016,9 +1020,17 @@ export default function BowmanGame() {
       const segmentEnd = (i + 1) * segmentLength;
 
       const startPosX = startX + Math.cos(radians) * segmentStart * direction;
-      const startPosY = startY + Math.sin(radians) * segmentStart * direction;
+      const startPosY =
+        startY +
+        Math.sin(radians) *
+          segmentStart *
+          (isPlayer1 ? 1 : currentGameState.isVsComputer ? -1 : 1);
       const endPosX = startX + Math.cos(radians) * segmentEnd * direction;
-      const endPosY = startY + Math.sin(radians) * segmentEnd * direction;
+      const endPosY =
+        startY +
+        Math.sin(radians) *
+          segmentEnd *
+          (isPlayer1 ? 1 : currentGameState.isVsComputer ? -1 : 1);
 
       const opacity = 0.9 - (i / segmentCount) * 0.4;
 
@@ -1061,7 +1073,11 @@ export default function BowmanGame() {
 
     const finalArrowSize = 6 + (power / 100) * 3;
     const finalX = startX + Math.cos(radians) * totalLength * direction;
-    const finalY = startY + Math.sin(radians) * totalLength * direction;
+    const finalY =
+      startY +
+      Math.sin(radians) *
+        totalLength *
+        (isPlayer1 ? 1 : currentGameState.isVsComputer ? -1 : 1);
 
     let finalColor;
     if (power < 30) {
