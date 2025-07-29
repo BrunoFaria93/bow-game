@@ -48,7 +48,7 @@ interface GameState {
   players: Player[];
   arrows: Arrow[];
   bloodParticles: BloodParticle[];
-  bloodStains: BloodStain[]; // <- ADICIONAR esta linha
+  bloodStains: BloodStain[];
   currentPlayer: number;
   gamePhase: "menu" | "playing" | "gameOver";
   winner: number | null;
@@ -59,6 +59,8 @@ interface GameState {
   aimCurrentY: number;
   turnInProgress: boolean;
   camera: Camera;
+  computerThinking: boolean;
+  isVsComputer: boolean; // ADICIONE esta linha
 }
 
 const CANVAS_WIDTH = 800;
@@ -78,7 +80,7 @@ export default function BowmanGame() {
     ],
     arrows: [],
     bloodParticles: [],
-    bloodStains: [], // <- ADICIONAR esta linha
+    bloodStains: [],
     currentPlayer: 1,
     gamePhase: "menu",
     winner: null,
@@ -89,6 +91,8 @@ export default function BowmanGame() {
     aimCurrentY: 0,
     turnInProgress: false,
     camera: { x: 0, y: 0, targetX: 0, targetY: 0 },
+    computerThinking: false,
+    isVsComputer: false, // ADICIONE esta linha que estava faltando
   });
 
   const animationRef = useRef<number | null>(null);
@@ -101,29 +105,39 @@ export default function BowmanGame() {
     { x: 100, health: 100, isActive: true },
     { x: 1200, health: 100, isActive: true },
   ]);
+  const [isVsComputer, setIsVsComputer] = useState(false);
 
   const updateCamera = () => {
     const currentGameState = gameStateRef.current;
     const camera = currentGameState.camera;
 
+    // Primeiro prioridade: seguir flecha ativa
     const activeArrow = currentGameState.arrows.find((a) => a.active);
 
     if (activeArrow) {
+      // ADICIONE ESTES LOGS:
+
+      // Se há flecha ativa, sempre seguir a flecha
       camera.targetX = activeArrow.x - CANVAS_WIDTH / 2;
       camera.targetY = 0;
-    } else if (!currentGameState.turnInProgress) {
+    } else if (currentGameState.turnInProgress) {
+      console.log("");
+    } else {
+      // Apenas quando o turno terminou completamente, focar no jogador atual
       const currentPlayerObj =
         currentGameState.players[currentGameState.currentPlayer - 1];
       camera.targetX = currentPlayerObj.x - CANVAS_WIDTH / 2;
       camera.targetY = 0;
     }
 
+    // Limitar os bounds da câmera
     camera.targetX = Math.max(
       0,
       Math.min(WORLD_WIDTH - CANVAS_WIDTH, camera.targetX)
     );
     camera.targetY = 0;
 
+    // Usar interpolação mais suave quando seguindo flecha
     const lerpFactor = activeArrow ? 0.1 : 0.05;
     camera.x += (camera.targetX - camera.x) * lerpFactor;
     camera.y += (camera.targetY - camera.y) * lerpFactor;
@@ -136,45 +150,111 @@ export default function BowmanGame() {
     const player = currentGameState.players[currentGameState.currentPlayer - 1];
     const isPlayer1 = currentGameState.currentPlayer === 1;
 
-    // Movimento do mouse desde o clique inicial
     const horizontalMovement =
       currentGameState.aimCurrentX - currentGameState.aimStartX;
     const verticalMovement =
       currentGameState.aimCurrentY - currentGameState.aimStartY;
 
-    // ÂNGULO: baseado no movimento VERTICAL, mas invertido para player 2
     let angle;
     if (isPlayer1) {
-      angle = Math.max(-85, Math.min(85, -verticalMovement * 0.5)); // Player 1 normal
+      angle = Math.max(-85, Math.min(85, -verticalMovement * 0.5));
     } else {
-      angle = Math.max(-85, Math.min(85, verticalMovement * 0.5)); // Player 2 invertido
+      angle = Math.max(-85, Math.min(85, verticalMovement * 0.5));
     }
 
-    // FORÇA: baseada apenas no movimento HORIZONTAL (esquerda/direita)
     const horizontalDistance = Math.abs(horizontalMovement);
     let power = Math.min(100, Math.max(5, (horizontalDistance / 100) * 100));
 
-    // INVERSÃO DA FORÇA baseada no jogador e direção do movimento:
-    // Player 1 (verde): força aumenta movendo para ESQUERDA (horizontalMovement negativo)
-    // Player 2 (roxo): força aumenta movendo para DIREITA (horizontalMovement positivo)
     if (isPlayer1 && horizontalMovement > 0) {
-      power = 100 - power + 10; // Inverte quando move para direita
+      power = 100 - power + 10;
     }
 
     if (!isPlayer1 && horizontalMovement < 0) {
-      power = 100 - power + 10; // Inverte quando move para esquerda
+      power = 100 - power + 10;
     }
 
-    // DIREÇÃO: sempre fixa baseada no jogador (Player 1 atira para direita, Player 2 para esquerda)
     const direction = isPlayer1 ? 1 : -1;
 
     return { angle, power, direction };
   };
 
+  const computerAim = () => {
+    const currentGameState = gameStateRef.current;
+    const player = currentGameState.players[1]; // Computer (Player 2)
+    const opponent = currentGameState.players[0]; // Human (Player 1)
+
+    const dx = opponent.x - player.x;
+    const distance = Math.abs(dx);
+
+    // CORREÇÃO: Usar ângulos NEGATIVOS para mirar para cima
+    let idealAngle = -45; // Negativo para cima!
+
+    // Ajustar ângulo baseado na distância
+    if (distance > 800) {
+      idealAngle = -35 - Math.random() * 10; // -35 a -45 graus para longas distâncias
+    } else if (distance > 400) {
+      idealAngle = -40 - Math.random() * 15; // -40 a -55 graus para médias distâncias
+    } else {
+      idealAngle = -50 - Math.random() * 20; // -50 a -70 graus para curtas distâncias
+    }
+
+    // Determinar se vai acertar (38% de chance)
+    const willHit = Math.random() < 0.38;
+
+    let finalAngle, finalPower;
+
+    if (willHit) {
+      // Tiro para acertar (com pequena variação para parecer natural)
+      finalAngle = idealAngle + (Math.random() - 0.5) * 8; // ±4 graus de variação
+      finalPower = 65 + Math.random() * 25; // 65-90% de potência
+    } else {
+      // Tiro para errar, mas passar perto (62% das vezes)
+      const missType = Math.random();
+
+      if (missType < 0.4) {
+        // Errar por pouco (40% dos erros)
+        finalAngle = idealAngle + (Math.random() - 0.5) * 20; // ±10 graus
+        finalPower = 60 + Math.random() * 30; // 60-90%
+
+        const errorDirection = Math.random() < 0.5 ? -1 : 1;
+        finalAngle += errorDirection * (3 + Math.random() * 7); // 3-10 graus de erro
+      } else if (missType < 0.7) {
+        // Errar por potência (30% dos erros)
+        finalAngle = idealAngle + (Math.random() - 0.5) * 15; // ±7.5 graus
+
+        if (Math.random() < 0.5) {
+          finalPower = 30 + Math.random() * 25; // Muito fraco: 30-55%
+        } else {
+          finalPower = 85 + Math.random() * 15; // Muito forte: 85-100%
+        }
+      } else {
+        // Errar por ângulo (30% dos erros)
+        if (Math.random() < 0.5) {
+          // CORREÇÃO: Para ângulo "muito alto", usar mais negativo (mais para cima)
+          finalAngle = idealAngle - 15 - Math.random() * 20; // Mais negativo = mais alto
+        } else {
+          // Para ângulo "muito baixo", usar menos negativo (mais para baixo)
+          finalAngle = Math.min(-10, idealAngle + 15 + Math.random() * 15); // Menos negativo = mais baixo
+        }
+        finalPower = 60 + Math.random() * 30; // 60-90%
+      }
+    }
+
+    // Garantir limites válidos - IMPORTANTE: manter ângulos negativos
+    finalAngle = Math.max(-85, Math.min(-10, finalAngle)); // Entre -85 e -10 graus
+    finalPower = Math.max(20, Math.min(100, finalPower));
+
+    // Direção baseada na posição do oponente
+    const direction = dx < 0 ? -1 : 1;
+
+    const result = { angle: finalAngle, power: finalPower, direction };
+
+    return result;
+  };
+
   const createBloodParticles = (x: number, y: number, count = 8) => {
     const currentGameState = gameStateRef.current;
 
-    // Partículas de sangue temporárias
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
       const speed = 2 + Math.random() * 3;
@@ -189,7 +269,6 @@ export default function BowmanGame() {
       });
     }
 
-    // Criar manchas de sangue permanentes no chão
     for (let i = 0; i < 3 + Math.random() * 4; i++) {
       currentGameState.bloodStains.push({
         x: x + (Math.random() - 0.5) * 80,
@@ -200,7 +279,7 @@ export default function BowmanGame() {
       });
     }
   };
-  // SUBSTITUIR a função drawBloodStains (remover o "xiadinho")
+
   const drawBloodStains = (ctx: CanvasRenderingContext2D) => {
     const currentGameState = gameStateRef.current;
     const camera = currentGameState.camera;
@@ -215,7 +294,6 @@ export default function BowmanGame() {
         screenY >= -20 &&
         screenY <= CANVAS_HEIGHT + 20
       ) {
-        // Sangue principal - SEM random para evitar "xiadinho"
         ctx.fillStyle = `rgba(120, 15, 15, ${stain.opacity})`;
         ctx.beginPath();
         ctx.ellipse(
@@ -232,7 +310,6 @@ export default function BowmanGame() {
     });
   };
 
-  // SUBSTITUIR completamente a função draw (corrigir todos os problemas)
   const draw = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -243,11 +320,9 @@ export default function BowmanGame() {
     const currentGameState = gameStateRef.current;
     const camera = currentGameState.camera;
 
-    // Limpar canvas completamente
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // === FUNDO ÉPICO CORRIGIDO ===
-    // Céu com múltiplas camadas
+    // Gradiente do céu
     const skyGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT * 0.7);
     skyGradient.addColorStop(0, "#1e3a8a");
     skyGradient.addColorStop(0.3, "#3b82f6");
@@ -256,7 +331,7 @@ export default function BowmanGame() {
     ctx.fillStyle = skyGradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Nuvens distantes (usando valores fixos baseados na posição, sem random)
+    // Nuvens
     ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
     const cloudOffset1 = camera.x * 0.1;
     for (let i = 0; i < 8; i++) {
@@ -272,7 +347,6 @@ export default function BowmanGame() {
       }
     }
 
-    // Nuvens médias
     ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
     const cloudOffset2 = camera.x * 0.2;
     for (let i = 0; i < 6; i++) {
@@ -288,14 +362,13 @@ export default function BowmanGame() {
       }
     }
 
-    // === MONTANHAS CORRIGIDAS ===
+    // Montanhas
     ctx.fillStyle = "rgba(51, 65, 85, 0.6)";
     const mountainOffset = camera.x * 0.3;
 
     ctx.beginPath();
     ctx.moveTo(0, CANVAS_HEIGHT * 0.7);
 
-    // Criar pontos das montanhas de forma mais controlada
     const mountainPoints = [];
     for (let i = 0; i <= 15; i++) {
       const x = i * 100 - mountainOffset;
@@ -303,7 +376,6 @@ export default function BowmanGame() {
       mountainPoints.push({ x, y: CANVAS_HEIGHT * 0.7 - height });
     }
 
-    // Desenhar as montanhas apenas na área visível
     mountainPoints.forEach((point, index) => {
       if (point.x >= -200 && point.x <= CANVAS_WIDTH + 200) {
         if (index === 0) {
@@ -314,17 +386,15 @@ export default function BowmanGame() {
       }
     });
 
-    // Fechar o path corretamente
     ctx.lineTo(CANVAS_WIDTH + 200, CANVAS_HEIGHT * 0.7);
     ctx.lineTo(CANVAS_WIDTH + 200, CANVAS_HEIGHT);
     ctx.lineTo(0, CANVAS_HEIGHT);
     ctx.closePath();
     ctx.fill();
 
-    // === CHÃO CORRIGIDO ===
+    // Chão
     const groundScreenY = CANVAS_HEIGHT - GROUND_HEIGHT;
 
-    // Base do chão com gradiente
     const groundGradient = ctx.createLinearGradient(
       0,
       groundScreenY,
@@ -338,7 +408,7 @@ export default function BowmanGame() {
     ctx.fillStyle = groundGradient;
     ctx.fillRect(0, groundScreenY, CANVAS_WIDTH, GROUND_HEIGHT);
 
-    // Textura do solo (SEM random para evitar "xiadinho")
+    // Textura do chão
     ctx.fillStyle = "rgba(20, 83, 45, 0.3)";
     for (
       let x = Math.floor(camera.x / 8) * 8;
@@ -346,7 +416,6 @@ export default function BowmanGame() {
       x += 8
     ) {
       for (let y = groundScreenY + 20; y < CANVAS_HEIGHT; y += 8) {
-        // Usar função determinística baseada na posição
         const seed = Math.sin(x * 0.01) * Math.cos(y * 0.01);
         if (seed > 0.4) {
           const screenX = x - camera.x;
@@ -357,10 +426,10 @@ export default function BowmanGame() {
       }
     }
 
-    // Desenhar manchas de sangue no chão
+    // Manchas de sangue
     drawBloodStains(ctx);
 
-    // Grama detalhada (SEM random para evitar "xiadinho")
+    // Grama
     for (
       let i = Math.floor(camera.x / 10) * 10;
       i < camera.x + CANVAS_WIDTH + 10;
@@ -368,7 +437,6 @@ export default function BowmanGame() {
     ) {
       const grassScreenX = i - camera.x;
       if (grassScreenX >= -20 && grassScreenX <= CANVAS_WIDTH + 20) {
-        // Grama alta (fundo) - valores determinísticos
         ctx.fillStyle = "#22c55e";
         for (let j = 0; j < 4; j++) {
           const bladeX = grassScreenX + j * 2.5 + Math.sin(i * 0.01 + j) * 1.5;
@@ -376,7 +444,6 @@ export default function BowmanGame() {
           ctx.fillRect(bladeX, groundScreenY - bladeHeight, 1, bladeHeight);
         }
 
-        // Grama média
         ctx.fillStyle = "#16a34a";
         for (let j = 0; j < 3; j++) {
           const bladeX = grassScreenX + j * 3 + Math.cos(i * 0.015 + j) * 1;
@@ -384,7 +451,6 @@ export default function BowmanGame() {
           ctx.fillRect(bladeX, groundScreenY - bladeHeight, 1.5, bladeHeight);
         }
 
-        // Pequenas flores (determinísticas)
         const flowerSeed = Math.sin(i * 0.1);
         if (flowerSeed > 0.8) {
           ctx.fillStyle = flowerSeed > 0.9 ? "#fbbf24" : "#f472b6";
@@ -395,14 +461,13 @@ export default function BowmanGame() {
       }
     }
 
-    // Sangue dos players no chão (SEM random para evitar "xiadinho")
+    // Efeito de sangue ao redor dos jogadores feridos
     currentGameState.players.forEach((player, index) => {
       const bloodIntensity = Math.max(0, (100 - player.health) / 100);
       if (bloodIntensity > 0.1) {
         const playerScreenX = player.x - camera.x;
 
         if (playerScreenX >= -100 && playerScreenX <= CANVAS_WIDTH + 100) {
-          // Criar poça de sangue determinística
           for (let i = 0; i < Math.floor(10 * bloodIntensity); i++) {
             const angle = (Math.PI * 2 * i) / Math.floor(10 * bloodIntensity);
             const distance = 15 + Math.sin(i * 0.5) * 20 * bloodIntensity;
@@ -426,7 +491,7 @@ export default function BowmanGame() {
       }
     });
 
-    // Resto do código permanece igual
+    // Desenhar jogadores
     currentGameState.players.forEach((player, index) => {
       if (player.isActive) {
         const { angle } = calculateAimValues();
@@ -443,11 +508,26 @@ export default function BowmanGame() {
       }
     });
 
+    // Desenhar guia de mira
     drawAimingGuide(ctx);
-    currentGameState.arrows.forEach((arrow) => drawArrow(ctx, arrow));
+
+    // LOGS DE DEBUG PARA S FLECHAS
+    currentGameState.arrows.forEach((arrow, index) => {});
+
+    // Desenhar flechas
+    currentGameState.arrows.forEach((arrow, index) => {
+      if (arrow.active && arrow.shooterId === 2) {
+      }
+      drawArrow(ctx, arrow);
+    });
+
+    // Desenhar partículas de sangue
     drawBloodParticles(ctx);
+
+    // Desenhar UI
     drawUI(ctx);
 
+    // Tela de fim de jogo
     if (currentGameState.gamePhase === "gameOver" && currentGameState.winner) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -456,7 +536,9 @@ export default function BowmanGame() {
       ctx.font = "36px Arial";
       ctx.textAlign = "center";
       ctx.fillText(
-        `Player ${currentGameState.winner} Venceu!`,
+        isVsComputer && currentGameState.winner === 2
+          ? "Computador Venceu!"
+          : `Player ${currentGameState.winner} Venceu!`,
         CANVAS_WIDTH / 2,
         CANVAS_HEIGHT / 2
       );
@@ -469,6 +551,7 @@ export default function BowmanGame() {
       ctx.textAlign = "left";
     }
   };
+
   const updateBloodParticles = () => {
     const currentGameState = gameStateRef.current;
 
@@ -529,16 +612,14 @@ export default function BowmanGame() {
     )
       return;
 
-    // Definir cores dos players (Player 1 = Verde, Player 2 = Roxo)
     const currentGameState = gameStateRef.current;
     const playerIndex = currentGameState.players.findIndex(
       (p) => Math.abs(p.x - worldX) < 10
     );
     const isPlayer1 = playerIndex === 0;
 
-    // Cores baseadas no player e estado
     const skinColor = isActive ? "#fdbcb4" : "#d5dbdb";
-    const tunicColor = isPlayer1 ? "#22c55e" : "#7c3aed"; // Verde vs Roxo
+    const tunicColor = isPlayer1 ? "#22c55e" : "#7c3aed";
     const tunicDark = isPlayer1 ? "#16a34a" : "#5b21b6";
     const leatherColor = "#8b4513";
     const beardColor = "#654321";
@@ -549,37 +630,29 @@ export default function BowmanGame() {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // === CABEÇA E CHAPÉU ===
-    // Cabeça principal (pele)
     ctx.fillStyle = skinColor;
     ctx.beginPath();
     ctx.arc(screenX, screenY - 40, 12, 0, Math.PI * 2);
     ctx.fill();
 
-    // Contorno da cabeça
     ctx.strokeStyle = "#2c3e50";
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // === CHAPÉU DE ARQUEIRO ===
     ctx.fillStyle = hatColor;
     ctx.beginPath();
-    // Base do chapéu
     ctx.ellipse(screenX, screenY - 48, 14, 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Copa do chapéu (cônica)
     ctx.beginPath();
     ctx.moveTo(screenX - 10, screenY - 48);
     ctx.quadraticCurveTo(screenX, screenY - 58, screenX + 10, screenY - 48);
     ctx.fill();
 
-    // Contorno do chapéu
     ctx.strokeStyle = "#2c3e50";
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Pluma no chapéu
     ctx.strokeStyle = isPlayer1 ? "#ef4444" : "#f59e0b";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -589,13 +662,11 @@ export default function BowmanGame() {
     ctx.lineTo(screenX + 14, screenY - 62);
     ctx.stroke();
 
-    // === BARBA ===
     ctx.fillStyle = beardColor;
     ctx.beginPath();
     ctx.ellipse(screenX, screenY - 30, 8, 6, 0, 0, Math.PI);
     ctx.fill();
 
-    // Detalhes da barba
     ctx.strokeStyle = "#4a3728";
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
@@ -606,20 +677,17 @@ export default function BowmanGame() {
       ctx.stroke();
     }
 
-    // Olhos - ajustados para direção correta
     ctx.fillStyle = "#2c3e50";
-    const eyeOffset = isPlayer1 ? 3 : -3; // Player 1 olha direita, Player 2 esquerda
+    const eyeOffset = isPlayer1 ? 3 : -3;
     ctx.beginPath();
     ctx.arc(screenX + eyeOffset, screenY - 42, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Pupila
     ctx.fillStyle = "#000";
     ctx.beginPath();
     ctx.arc(screenX + eyeOffset, screenY - 42, 0.8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Sobrancelha
     ctx.strokeStyle = beardColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -627,29 +695,23 @@ export default function BowmanGame() {
     ctx.lineTo(screenX + eyeOffset + 3, screenY - 44);
     ctx.stroke();
 
-    // === TÚNICA DE ARQUEIRO ===
-    // Túnica principal
     ctx.fillStyle = tunicColor;
     ctx.beginPath();
     ctx.roundRect(screenX - 10, screenY - 28, 20, 24, 4);
     ctx.fill();
 
-    // Contorno da túnica
     ctx.strokeStyle = tunicDark;
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Cinto de couro
     ctx.fillStyle = leatherColor;
     ctx.fillRect(screenX - 10, screenY - 12, 20, 4);
 
-    // Fivela do cinto
     ctx.fillStyle = "#ffd700";
     ctx.beginPath();
     ctx.roundRect(screenX - 2, screenY - 11, 4, 2, 1);
     ctx.fill();
 
-    // Detalhes da túnica (bordados)
     ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -659,38 +721,31 @@ export default function BowmanGame() {
     ctx.lineTo(screenX + 6, screenY - 16);
     ctx.stroke();
 
-    // Emblema no peito
     ctx.fillStyle = tunicDark;
     ctx.beginPath();
     ctx.arc(screenX, screenY - 18, 3, 0, Math.PI * 2);
     ctx.fill();
 
-    // Símbolo do arco no emblema
     ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(screenX, screenY - 18, 2, Math.PI * 0.3, Math.PI * 1.7);
     ctx.stroke();
 
-    // === CALÇAS E BOTAS ===
-    // Calças
     ctx.fillStyle = "#654321";
     ctx.strokeStyle = "#4a3728";
     ctx.lineWidth = 3;
 
-    // Perna esquerda
     ctx.beginPath();
     ctx.moveTo(screenX - 4, screenY - 4);
     ctx.lineTo(screenX - 8, screenY + 8);
     ctx.stroke();
 
-    // Perna direita
     ctx.beginPath();
     ctx.moveTo(screenX + 4, screenY - 4);
     ctx.lineTo(screenX + 8, screenY + 8);
     ctx.stroke();
 
-    // Botas de couro
     ctx.fillStyle = leatherColor;
     ctx.beginPath();
     ctx.ellipse(screenX - 8, screenY + 8, 7, 4, 0, 0, Math.PI * 2);
@@ -700,7 +755,6 @@ export default function BowmanGame() {
     ctx.ellipse(screenX + 8, screenY + 8, 7, 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Detalhes das botas
     ctx.strokeStyle = "#5d4037";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -710,8 +764,7 @@ export default function BowmanGame() {
     ctx.lineTo(screenX + 12, screenY + 6);
     ctx.stroke();
 
-    // === ALJAVA (PORTA-FLECHAS) ===
-    const quiverX = screenX + (isPlayer1 ? -12 : 12); // Player 1 aljava esquerda, Player 2 direita
+    const quiverX = screenX + (isPlayer1 ? -12 : 12);
     const quiverY = screenY - 15;
 
     ctx.fillStyle = leatherColor;
@@ -719,14 +772,12 @@ export default function BowmanGame() {
     ctx.roundRect(quiverX - 3, quiverY - 8, 6, 16, 2);
     ctx.fill();
 
-    // Alça da aljava
     ctx.strokeStyle = leatherColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(quiverX, quiverY - 10, 8, Math.PI * 0.8, Math.PI * 1.2);
     ctx.stroke();
 
-    // Flechas na aljava
     ctx.strokeStyle = "#8B4513";
     ctx.lineWidth = 1;
     for (let i = 0; i < 3; i++) {
@@ -736,23 +787,16 @@ export default function BowmanGame() {
       ctx.stroke();
     }
 
-    // === ARCO E ANIMAÇÃO CORRIGIDOS ===
     if (isActive && isCurrentPlayer) {
       const radians = (aimAngle * Math.PI) / 180;
-
       if (isAiming) {
-        // === MODO MIRANDO - ARCO TENSIONADO ===
+        const bowSide = isPlayer1 ? 1 : -1;
+        const aimDirection = isPlayer1 ? 1 : -1;
 
-        // Posicionamento baseado no player
-        const bowSide = isPlayer1 ? 1 : -1; // Player 1 segura à direita, Player 2 à esquerda
-        const aimDirection = isPlayer1 ? 1 : -1; // Player 1 mira direita, Player 2 esquerda
-
-        // Braço que segura o arco
         const bowArmAngle = radians + (Math.PI / 6) * bowSide;
         const bowArmX = screenX + Math.cos(bowArmAngle) * 20 * bowSide;
         const bowArmY = screenY - 25 + Math.sin(bowArmAngle) * 20;
 
-        // Braço que segura o arco
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -760,7 +804,6 @@ export default function BowmanGame() {
         ctx.lineTo(bowArmX, bowArmY);
         ctx.stroke();
 
-        // Braçadeira de couro
         ctx.fillStyle = leatherColor;
         const armguardX = screenX + Math.cos(bowArmAngle) * 12 * bowSide;
         const armguardY = screenY - 25 + Math.sin(bowArmAngle) * 12;
@@ -768,14 +811,12 @@ export default function BowmanGame() {
         ctx.roundRect(armguardX - 2, armguardY - 4, 4, 8, 1);
         ctx.fill();
 
-        // Braço que puxa a corda
         const { power } = calculateAimValues();
         const pullDistance = 18 + (power / 100) * 12;
 
         const stringArmX = screenX - bowSide * pullDistance;
         const stringArmY = screenY - 25 + Math.sin(radians) * 8 * aimDirection;
 
-        // Braço da corda
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -783,17 +824,14 @@ export default function BowmanGame() {
         ctx.lineTo(stringArmX, stringArmY);
         ctx.stroke();
 
-        // Luva de arqueiro
         ctx.fillStyle = leatherColor;
         ctx.beginPath();
         ctx.arc(stringArmX, stringArmY, 3, 0, Math.PI * 2);
         ctx.fill();
 
-        // === ARCO DETALHADO ===
         ctx.strokeStyle = bowColor;
         ctx.lineWidth = 6;
 
-        // Arco principal (orientado corretamente por player)
         const bowRadius = 20;
         const bowStartAngle = radians - (Math.PI / 2.2) * aimDirection;
         const bowEndAngle = radians + (Math.PI / 2.2) * aimDirection;
@@ -802,20 +840,17 @@ export default function BowmanGame() {
         ctx.arc(bowArmX, bowArmY, bowRadius, bowStartAngle, bowEndAngle);
         ctx.stroke();
 
-        // Detalhes do arco
         ctx.strokeStyle = "#654321";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(bowArmX, bowArmY, bowRadius - 2, bowStartAngle, bowEndAngle);
         ctx.stroke();
 
-        // Empunhadura do arco
         ctx.fillStyle = leatherColor;
         ctx.beginPath();
         ctx.arc(bowArmX, bowArmY, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Pontas do arco
         ctx.fillStyle = "#2c3e50";
         const tipSize = 4;
 
@@ -831,7 +866,6 @@ export default function BowmanGame() {
         ctx.arc(botTipX, botTipY, tipSize, 0, Math.PI * 2);
         ctx.fill();
 
-        // === CORDA TENSIONADA ===
         ctx.strokeStyle = stringColor;
         ctx.lineWidth = 3;
 
@@ -848,7 +882,6 @@ export default function BowmanGame() {
         ctx.quadraticCurveTo(midPointX, midPointY, botTipX, botTipY);
         ctx.stroke();
 
-        // === FLECHA ===
         const arrowLength = 35;
         const arrowStartX = stringArmX;
         const arrowStartY = stringArmY;
@@ -857,7 +890,6 @@ export default function BowmanGame() {
         const arrowEndY =
           arrowStartY + Math.sin(radians) * arrowLength * aimDirection;
 
-        // Haste da flecha
         ctx.strokeStyle = "#deb887";
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -865,7 +897,6 @@ export default function BowmanGame() {
         ctx.lineTo(arrowEndX, arrowEndY);
         ctx.stroke();
 
-        // Ponta da flecha
         ctx.fillStyle = "#708090";
         ctx.strokeStyle = "#2c3e50";
         ctx.lineWidth = 1;
@@ -885,7 +916,6 @@ export default function BowmanGame() {
 
         ctx.restore();
 
-        // Penas da flecha
         ctx.strokeStyle = isPlayer1 ? "#22c55e" : "#7c3aed";
         ctx.lineWidth = 3;
 
@@ -902,36 +932,28 @@ export default function BowmanGame() {
 
         ctx.restore();
       } else {
-        // === MODO RELAXADO - CORRIGIDO ===
-
-        // Posição dos braços baseada na direção do player
         const armDirection = isPlayer1 ? 1 : -1;
 
-        // Braços em posição natural
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 4;
 
-        // Braço direito (ou esquerdo para player 2)
         ctx.beginPath();
         ctx.moveTo(screenX, screenY - 25);
         ctx.lineTo(screenX + 15 * armDirection, screenY - 15);
         ctx.stroke();
 
-        // Braço esquerdo (ou direito para player 2)
         ctx.beginPath();
         ctx.moveTo(screenX, screenY - 25);
         ctx.lineTo(screenX - 12 * armDirection, screenY - 18);
         ctx.stroke();
 
-        // Arco em descanso (posicionado corretamente)
-        const bowX = screenX - 15 * armDirection; // Arco do lado correto
+        const bowX = screenX - 15 * armDirection;
         const bowY = screenY - 20;
 
         ctx.strokeStyle = bowColor;
         ctx.lineWidth = 5;
         ctx.beginPath();
 
-        // Arco orientado corretamente para cada player
         if (isPlayer1) {
           ctx.arc(bowX, bowY, 16, Math.PI * 0.2, Math.PI * 1.8);
         } else {
@@ -939,14 +961,12 @@ export default function BowmanGame() {
         }
         ctx.stroke();
 
-        // Empunhadura
         ctx.fillStyle = leatherColor;
         ctx.beginPath();
         ctx.arc(bowX, bowY, 3, 0, Math.PI * 2);
         ctx.fill();
       }
     } else {
-      // === PLAYER INATIVO - BRAÇOS BÁSICOS ===
       const armDirection = isPlayer1 ? 1 : -1;
 
       ctx.strokeStyle = skinColor;
@@ -960,12 +980,12 @@ export default function BowmanGame() {
       ctx.stroke();
     }
 
-    // === SOMBRA ===
     ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
     ctx.beginPath();
     ctx.ellipse(screenX, screenY + 12, 15, 5, 0, 0, Math.PI * 2);
     ctx.fill();
   };
+
   const drawAimingGuide = (ctx: CanvasRenderingContext2D) => {
     const currentGameState = gameStateRef.current;
     if (!currentGameState.isAiming || currentGameState.gamePhase !== "playing")
@@ -981,19 +1001,16 @@ export default function BowmanGame() {
     const screenX = player.x - camera.x;
     const screenY = GROUND_Y - camera.y;
 
-    // Calcular o comprimento baseado na força (40% até 100% do poder)
-    const baseLength = 80; // Comprimento base
-    const powerMultiplier = 0.4 + (power / 100) * 0.6; // 0.4 a 1.0
+    const baseLength = 80;
+    const powerMultiplier = 0.4 + (power / 100) * 0.6;
     const totalLength = baseLength * powerMultiplier;
 
-    // Número de segmentos baseado na força (3 a 7 segmentos)
     const segmentCount = Math.floor(3 + (power / 100) * 4);
     const segmentLength = totalLength / segmentCount;
 
     const startX = screenX;
     const startY = screenY - 25;
 
-    // Desenhar linha principal com gradiente de opacidade
     for (let i = 0; i < segmentCount; i++) {
       const segmentStart = i * segmentLength;
       const segmentEnd = (i + 1) * segmentLength;
@@ -1003,21 +1020,19 @@ export default function BowmanGame() {
       const endPosX = startX + Math.cos(radians) * segmentEnd * direction;
       const endPosY = startY + Math.sin(radians) * segmentEnd * direction;
 
-      // Opacidade diminui conforme a distância (mais realista)
       const opacity = 0.9 - (i / segmentCount) * 0.4;
 
-      // Cor baseada na força
       let color;
       if (power < 30) {
-        color = `rgba(34, 197, 94, ${opacity})`; // Verde (força baixa)
+        color = `rgba(34, 197, 94, ${opacity})`;
       } else if (power < 70) {
-        color = `rgba(251, 191, 36, ${opacity})`; // Amarelo (força média)
+        color = `rgba(251, 191, 36, ${opacity})`;
       } else {
-        color = `rgba(239, 68, 68, ${opacity})`; // Vermelho (força alta)
+        color = `rgba(239, 68, 68, ${opacity})`;
       }
 
       ctx.strokeStyle = color;
-      ctx.lineWidth = 3 + power / 100; // Linha mais grossa com mais força
+      ctx.lineWidth = 3 + power / 100;
       ctx.setLineDash([]);
 
       ctx.beginPath();
@@ -1025,9 +1040,8 @@ export default function BowmanGame() {
       ctx.lineTo(endPosX, endPosY);
       ctx.stroke();
 
-      // Adicionar seta no final de cada segmento (exceto o último)
       if (i < segmentCount - 1) {
-        const arrowSize = 4 + (power / 100) * 2; // Seta maior com mais força
+        const arrowSize = 4 + (power / 100) * 2;
 
         ctx.fillStyle = color;
         ctx.save();
@@ -1045,7 +1059,6 @@ export default function BowmanGame() {
       }
     }
 
-    // Seta final maior
     const finalArrowSize = 6 + (power / 100) * 3;
     const finalX = startX + Math.cos(radians) * totalLength * direction;
     const finalY = startY + Math.sin(radians) * totalLength * direction;
@@ -1078,19 +1091,16 @@ export default function BowmanGame() {
 
     ctx.restore();
 
-    // HUD de informações melhorado
     const hudWidth = 90;
     const hudHeight = 55;
     const hudX = screenX - hudWidth / 2;
     const hudY = screenY - 100;
 
-    // Fundo do HUD com borda
     ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
     ctx.beginPath();
     ctx.roundRect(hudX, hudY, hudWidth, hudHeight, 8);
     ctx.fill();
 
-    // Borda colorida baseada na força
     let borderColor;
     if (power < 30) {
       borderColor = "rgba(34, 197, 94, 0.8)";
@@ -1104,25 +1114,21 @@ export default function BowmanGame() {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Textos do HUD
     ctx.fillStyle = "#f8fafc";
     ctx.font = "500 12px 'Inter', system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(`${Math.round(angle)}°`, screenX, hudY + 18);
 
-    // Barra de força visual
     const barWidth = 60;
     const barHeight = 8;
     const barX = screenX - barWidth / 2;
     const barY = hudY + 25;
 
-    // Fundo da barra
     ctx.fillStyle = "rgba(51, 65, 85, 0.8)";
     ctx.beginPath();
     ctx.roundRect(barX, barY, barWidth, barHeight, 4);
     ctx.fill();
 
-    // Preenchimento da barra
     ctx.fillStyle = borderColor;
     ctx.beginPath();
     ctx.roundRect(
@@ -1134,7 +1140,6 @@ export default function BowmanGame() {
     );
     ctx.fill();
 
-    // Texto da força
     ctx.fillStyle = "#cbd5e1";
     ctx.font = "400 10px 'Inter', system-ui, sans-serif";
     ctx.fillText(`${Math.round(power)}%`, screenX, hudY + 45);
@@ -1212,18 +1217,15 @@ export default function BowmanGame() {
   const drawUI = (ctx: CanvasRenderingContext2D) => {
     const currentGameState = gameStateRef.current;
 
-    // Background com gradiente sutil
     const gradient = ctx.createLinearGradient(0, 0, 0, 80);
     gradient.addColorStop(0, "rgba(15, 23, 42, 0.95)");
     gradient.addColorStop(1, "rgba(15, 23, 42, 0.85)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
 
-    // Linha decorativa no bottom
     ctx.fillStyle = "rgba(59, 130, 246, 0.8)";
     ctx.fillRect(0, 78, CANVAS_WIDTH, 2);
 
-    // Player cards
     currentGameState.players.forEach((player, index) => {
       const isLeft = index === 0;
       const cardX = isLeft ? 20 : CANVAS_WIDTH - 200;
@@ -1231,18 +1233,15 @@ export default function BowmanGame() {
       const cardWidth = 180;
       const cardHeight = 50;
 
-      // Card background com bordas arredondadas
       ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
       ctx.beginPath();
       ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 8);
       ctx.fill();
 
-      // Borda sutil
       ctx.strokeStyle = "rgba(71, 85, 105, 0.5)";
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Player indicator (dot)
       const dotX = cardX + 12;
       const dotY = cardY + 15;
       const isCurrentPlayer = currentGameState.currentPlayer === index + 1;
@@ -1252,12 +1251,14 @@ export default function BowmanGame() {
       ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Player name
       ctx.fillStyle = "#f8fafc";
       ctx.font = "500 14px 'Inter', system-ui, sans-serif";
-      ctx.fillText(`P${index + 1}`, cardX + 25, cardY + 19);
+      ctx.fillText(
+        isVsComputer && index === 1 ? "Computador" : `P${index + 1}`,
+        cardX + 25,
+        cardY + 19
+      );
 
-      // Health bar background
       const barX = cardX + 12;
       const barY = cardY + 28;
       const barWidth = cardWidth - 24;
@@ -1268,16 +1269,15 @@ export default function BowmanGame() {
       ctx.roundRect(barX, barY, barWidth, barHeight, 4);
       ctx.fill();
 
-      // Health bar fill
       const healthPercent = Math.max(0, player.health / 100);
       let healthColor;
 
       if (healthPercent > 0.6) {
-        healthColor = "#10b981"; // Green
+        healthColor = "#10b981";
       } else if (healthPercent > 0.3) {
-        healthColor = "#f59e0b"; // Amber
+        healthColor = "#f59e0b";
       } else {
-        healthColor = "#ef4444"; // Red
+        healthColor = "#ef4444";
       }
 
       if (healthPercent > 0) {
@@ -1292,14 +1292,12 @@ export default function BowmanGame() {
         );
         ctx.fill();
 
-        // Subtle glow effect
         ctx.shadowColor = healthColor;
         ctx.shadowBlur = 4;
         ctx.fill();
         ctx.shadowBlur = 0;
       }
 
-      // Health percentage text
       ctx.fillStyle = "#cbd5e1";
       ctx.font = "400 11px 'Inter', system-ui, sans-serif";
       ctx.textAlign = "right";
@@ -1311,18 +1309,15 @@ export default function BowmanGame() {
       ctx.textAlign = "left";
     });
 
-    // Turn indicator (center)
     if (currentGameState.gamePhase === "playing") {
       const centerX = CANVAS_WIDTH / 2;
       const hasActiveArrow = currentGameState.arrows.some((a) => a.active);
 
-      // Status background
       ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
       ctx.beginPath();
       ctx.roundRect(centerX - 80, 20, 160, 35, 8);
       ctx.fill();
 
-      // Status border
       ctx.strokeStyle = "rgba(71, 85, 105, 0.5)";
       ctx.lineWidth = 1;
       ctx.stroke();
@@ -1330,7 +1325,6 @@ export default function BowmanGame() {
       ctx.textAlign = "center";
 
       if (hasActiveArrow) {
-        // Tracking arrow status
         ctx.fillStyle = "#f59e0b";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
         ctx.fillText("● SEGUINDO", centerX, 35);
@@ -1338,7 +1332,6 @@ export default function BowmanGame() {
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
         ctx.fillText("Flecha em vôo", centerX, 47);
       } else if (currentGameState.turnInProgress) {
-        // Awaiting landing status
         ctx.fillStyle = "#ef4444";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
         ctx.fillText("● ESPERANDO", centerX, 35);
@@ -1346,21 +1339,37 @@ export default function BowmanGame() {
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
         ctx.fillText("Pousando...", centerX, 47);
       } else if (currentGameState.isAiming) {
-        // Aiming status
         ctx.fillStyle = "#3b82f6";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
         ctx.fillText("● MIRANDO", centerX, 35);
         ctx.fillStyle = "#93c5fd";
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
-        ctx.fillText("Solte para atirar!", centerX, 47);
+        ctx.fillText(
+          isVsComputer && currentGameState.currentPlayer === 2
+            ? "Computador mirando..."
+            : "Solte para atirar!",
+          centerX,
+          47
+        );
       } else {
-        // Current turn
         ctx.fillStyle = "#10b981";
         ctx.font = "500 12px 'Inter', system-ui, sans-serif";
-        ctx.fillText(`● PLAYER ${currentGameState.currentPlayer}`, centerX, 35);
+        ctx.fillText(
+          isVsComputer && currentGameState.currentPlayer === 2
+            ? "● COMPUTADOR"
+            : `● PLAYER ${currentGameState.currentPlayer}`,
+          centerX,
+          35
+        );
         ctx.fillStyle = "#6ee7b7";
         ctx.font = "400 10px 'Inter', system-ui, sans-serif";
-        ctx.fillText("Sua vez", centerX, 47);
+        ctx.fillText(
+          isVsComputer && currentGameState.currentPlayer === 2
+            ? "Computador atirando..."
+            : "Sua vez",
+          centerX,
+          47
+        );
       }
 
       ctx.textAlign = "left";
@@ -1370,7 +1379,8 @@ export default function BowmanGame() {
   const checkCollision = (arrow: Arrow): boolean => {
     const currentGameState = gameStateRef.current;
 
-    if (arrow.y >= GROUND_Y - 5) {
+    // CORREÇÃO: Mudei de GROUND_Y - 5 para GROUND_Y + 10 para dar mais tolerância
+    if (arrow.y >= GROUND_Y + 10) {
       return true;
     }
 
@@ -1440,15 +1450,100 @@ export default function BowmanGame() {
       return arrow;
     });
 
-    if (arrowLanded && currentGameState.gamePhase === "playing") {
-      const hasActiveArrows = currentGameState.arrows.some((a) => a.active);
-      if (!hasActiveArrows) {
-        currentGameState.turnInProgress = false;
-        currentGameState.currentPlayer =
-          currentGameState.currentPlayer === 1 ? 2 : 1;
-        setCurrentPlayer(currentGameState.currentPlayer);
+    if (currentGameState.gamePhase !== "playing") return;
+
+    const hasActiveArrows = currentGameState.arrows.some((a) => a.active);
+
+    if (arrowLanded && !hasActiveArrows) {
+      currentGameState.turnInProgress = false;
+      currentGameState.isAiming = false;
+      currentGameState.computerThinking = false;
+
+      // Troca de jogador
+      currentGameState.currentPlayer =
+        currentGameState.currentPlayer === 1 ? 2 : 1;
+      setCurrentPlayer(currentGameState.currentPlayer);
+
+      // Se for vez do computador, inicia o processo
+      if (
+        currentGameState.isVsComputer &&
+        currentGameState.currentPlayer === 2
+      ) {
+        setTimeout(() => {
+          computerShoot();
+        }, 1000);
       }
     }
+  };
+
+  const computerShoot = () => {
+    const currentGameState = gameStateRef.current;
+
+    if (
+      currentGameState.gamePhase !== "playing" ||
+      currentGameState.currentPlayer !== 2 ||
+      currentGameState.turnInProgress ||
+      currentGameState.computerThinking
+    ) {
+      return;
+    }
+
+    currentGameState.computerThinking = true;
+    currentGameState.isAiming = true;
+
+    const aimResult = computerAim();
+
+    const { angle, power, direction } = aimResult;
+    const player = currentGameState.players[1];
+    const radians = (angle * Math.PI) / 180;
+    const velocity = (power / 100) * MAX_POWER;
+
+    if (isNaN(angle) || isNaN(radians) || isNaN(velocity)) {
+      currentGameState.isAiming = false;
+      currentGameState.computerThinking = false;
+      return;
+    }
+
+    // Simula mira para visualização
+    currentGameState.aimStartX = player.x;
+    currentGameState.aimStartY = GROUND_Y - 25;
+    currentGameState.aimCurrentX =
+      player.x + Math.cos(radians) * (power / 100) * 50 * direction;
+    currentGameState.aimCurrentY =
+      GROUND_Y - 25 + Math.sin(radians) * (power / 100) * 50;
+
+    setTimeout(() => {
+      if (
+        currentGameState.gamePhase !== "playing" ||
+        currentGameState.currentPlayer !== 2 ||
+        !currentGameState.computerThinking
+      ) {
+        currentGameState.isAiming = false;
+        currentGameState.computerThinking = false;
+        return;
+      }
+
+      // CORREÇÃO: Usar a mesma altura que o jogador humano
+      const startY = GROUND_Y - 50; // Mudei de -25 para -50 para dar mais altura inicial
+
+      const newArrow: Arrow = {
+        x: player.x,
+        y: startY, // Usar altura mais alta
+        vx: Math.cos(radians) * velocity * direction,
+        vy: Math.sin(radians) * velocity,
+        active: true,
+        trail: [],
+        shooterId: 2,
+      };
+
+      // Limpar flechas antigas e adicionar a nova
+      currentGameState.arrows = [];
+      currentGameState.arrows.push(newArrow);
+
+      currentGameState.turnInProgress = true;
+      currentGameState.isAiming = false;
+      currentGameState.computerThinking = false;
+    }, 1500);
   };
 
   const gameLoop = () => {
@@ -1474,6 +1569,7 @@ export default function BowmanGame() {
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (gameStateRef.current.gamePhase !== "playing") return;
     if (gameStateRef.current.turnInProgress) return;
+    if (isVsComputer && gameStateRef.current.currentPlayer === 2) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1491,6 +1587,7 @@ export default function BowmanGame() {
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!gameStateRef.current.isAiming) return;
+    if (isVsComputer && gameStateRef.current.currentPlayer === 2) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1506,10 +1603,11 @@ export default function BowmanGame() {
   const handleMouseUp = () => {
     if (
       !gameStateRef.current.isAiming ||
-      gameStateRef.current.gamePhase !== "playing"
+      gameStateRef.current.gamePhase !== "playing" ||
+      gameStateRef.current.turnInProgress ||
+      (isVsComputer && gameStateRef.current.currentPlayer === 2)
     )
       return;
-    if (gameStateRef.current.turnInProgress) return;
 
     const { angle, power, direction } = calculateAimValues();
 
@@ -1523,36 +1621,39 @@ export default function BowmanGame() {
     const radians = (angle * Math.PI) / 180;
     const velocity = (power / 100) * MAX_POWER;
 
+    // Usar a mesma altura para ambos os jogadores
+    const startY = GROUND_Y - 50; // Mesma altura para ambos os jogadores
+
     const newArrow: Arrow = {
       x: player.x,
-      y: GROUND_Y - 25,
+      y: startY,
       vx: Math.cos(radians) * velocity * direction,
-      vy: Math.sin(radians) * velocity * direction,
+      vy: Math.sin(radians) * velocity,
       active: true,
       trail: [],
       shooterId: gameStateRef.current.currentPlayer,
     };
 
     gameStateRef.current.turnInProgress = true;
-    gameStateRef.current.arrows = gameStateRef.current.arrows.filter(
-      (a) => a.active
-    );
+    gameStateRef.current.arrows = [];
     gameStateRef.current.arrows.push(newArrow);
     gameStateRef.current.isAiming = false;
   };
 
-  const startGame = () => {
+  const startGame = (vsComputer: boolean) => {
     const newPlayers = [
       { x: 100, health: 100, isActive: true },
       { x: 1200, health: 100, isActive: true },
     ];
 
+    setIsVsComputer(vsComputer);
+
     gameStateRef.current = {
       players: newPlayers,
       arrows: [],
       bloodParticles: [],
-      bloodStains: [], // <- ADICIONAR esta linha
-      currentPlayer: 1,
+      bloodStains: [],
+      currentPlayer: 1, // SEMPRE começa com player 1
       gamePhase: "playing",
       winner: null,
       isAiming: false,
@@ -1561,12 +1662,14 @@ export default function BowmanGame() {
       aimCurrentX: 0,
       aimCurrentY: 0,
       turnInProgress: false,
+      computerThinking: false,
       camera: { x: 0, y: 0, targetX: 0, targetY: 0 },
+      isVsComputer: vsComputer,
     };
 
     setGameState("playing");
     setPlayers(newPlayers);
-    setCurrentPlayer(1);
+    setCurrentPlayer(1); // Player 1 sempre começa
     setWinner(null);
   };
 
@@ -1576,7 +1679,9 @@ export default function BowmanGame() {
     gameStateRef.current.bloodParticles = [];
     gameStateRef.current.isAiming = false;
     gameStateRef.current.turnInProgress = false;
+    gameStateRef.current.computerThinking = false; // ADICIONE esta linha
     setGameState("menu");
+    setIsVsComputer(false);
   };
 
   return (
@@ -1596,9 +1701,14 @@ export default function BowmanGame() {
 
       <div className="flex gap-4">
         {gameState === "menu" && (
-          <Button onClick={startGame} className="px-6 py-2">
-            Iniciar Jogo
-          </Button>
+          <>
+            <Button onClick={() => startGame(false)} className="px-6 py-2">
+              Iniciar Jogo (2 Jogadores)
+            </Button>
+            <Button onClick={() => startGame(true)} className="px-6 py-2">
+              Iniciar Jogo (vs Computador)
+            </Button>
+          </>
         )}
 
         {gameState === "playing" && (
@@ -1612,7 +1722,7 @@ export default function BowmanGame() {
         )}
 
         {gameState === "gameOver" && (
-          <Button onClick={startGame} className="px-6 py-2">
+          <Button onClick={() => startGame(isVsComputer)} className="px-6 py-2">
             Jogar Novamente
           </Button>
         )}
@@ -1624,9 +1734,10 @@ export default function BowmanGame() {
           <br />
           • Objetivo: Atingir o oponente com uma flecha, sendo o tiro na cabeça
           a forma mais eficaz de eliminá-lo.
-          <br />• Controles: Os jogadores ajustam o ângulo e a força dos tiros
-          com um mecanismo simples de arrastar e soltar o mouse, mirando para
-          acertar o oponente.
+          <br />• Controles (Jogador): Ajuste o ângulo e a força dos tiros
+          arrastando e soltando o mouse.
+          <br />• Modo vs Computador: O computador controla o Player 2 e atira
+          automaticamente.
         </p>
       </div>
     </div>
